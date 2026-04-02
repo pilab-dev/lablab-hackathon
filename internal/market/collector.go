@@ -3,13 +3,14 @@ package market
 import (
 	"context"
 	"encoding/json"
-	"log"
 	"strings"
 	"time"
 
 	"kraken-trader/internal/state"
 	"kraken-trader/internal/storage"
 	"kraken-trader/pkg/kraken"
+
+	"github.com/rs/zerolog/log"
 )
 
 // WSTickerData represents the JSON object streamed by `kraken ws ticker`
@@ -57,26 +58,32 @@ func NewCollector(cli *kraken.Client, db *storage.Client, stateMgr *state.Memory
 
 // Start begins the WebSocket stream. It blocks until the context is canceled.
 func (c *Collector) Start(ctx context.Context) {
-	log.Printf("Starting WebSocket Market Data Collector for pairs: %v", c.pairs)
+	log.Info().Strs("pairs", c.pairs).Msg("Starting WebSocket Market Data Collector")
 
 	args := append([]string{"ws", "ticker"}, c.pairs...)
 
 	// Start the continuous stream. This callback fires for every line of JSON received.
 	err := c.cli.RunStream(ctx, c.handleWSTick, args...)
 	if err != nil {
-		log.Printf("WebSocket stream failed or context canceled: %v", err)
+		log.Error().Err(err).Msg("WebSocket stream failed or context canceled")
 	}
 }
 
 func (c *Collector) handleWSTick(line []byte) {
 	var tick WSTickerData
 	if err := json.Unmarshal(line, &tick); err != nil {
+		log.Error().Str("data", string(line)).
+			Err(err).
+			Msg("Failed to unmarshal ticker data")
+
 		// Ignore parse errors from heartbeat/system messages
 		return
 	}
 
 	// Only process valid ticker updates
 	if tick.Channel != "ticker" || tick.Type != "update" || len(tick.Data) == 0 {
+		log.Trace().Str("data", string(line)).Msg("Invalid ticker data")
+
 		return
 	}
 
@@ -103,13 +110,15 @@ func (c *Collector) handleWSTick(line []byte) {
 
 			// Fire and forget (don't block the WebSocket reader)
 			go func(p storage.TickerPoint) {
+				log.Trace().Str("pair", p.Pair).Msg("writing point")
+
 				// Use a quick timeout context for the DB write
 				dbCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 				defer cancel()
 
 				measurement, tags, fields, t := p.ToPointData()
 				if err := c.db.WritePoint(dbCtx, measurement, tags, fields, t); err != nil {
-					log.Printf("Error writing ticker to DB for %s: %v", p.Pair, err)
+					log.Error().Err(err).Str("pair", p.Pair).Msg("Error writing ticker to DB")
 				}
 			}(point)
 		}

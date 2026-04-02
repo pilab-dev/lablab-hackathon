@@ -5,10 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"time"
 
+	"github.com/rs/zerolog/log"
 	"kraken-trader/internal/news"
 	"kraken-trader/internal/state"
 )
@@ -65,7 +65,7 @@ func (e *Engine) Decide(ctx context.Context, pairs []string) ([]TradeDecision, e
 		snap, ok := e.stateMgr.GetMarketSnapshot(p)
 		if ok {
 			marketCtx += fmt.Sprintf("- %s: Price $%.2f, Bid $%.2f, Ask $%.2f\n", p, snap.Last, snap.Bid, snap.Ask)
-			signalsCtx = append(signalsCtx, fmt.Sprintf("- %s: Momentum: %s, Breakout: %s, Vol: %s", 
+			signalsCtx = append(signalsCtx, fmt.Sprintf("- %s: Momentum: %s, Breakout: %s, Vol: %s",
 				p, snap.MomentumSignal, snap.BreakoutSignal, snap.VolumeSignal))
 		}
 	}
@@ -153,7 +153,7 @@ func (e *Engine) callOllama(ctx context.Context, userPrompt string) ([]TradeDeci
 	// 5. Parse JSON Decisions
 	var result llmResponse
 	if err := json.Unmarshal([]byte(ollamaResp.Message.Content), &result); err != nil {
-		log.Printf("Raw LLM output was: %s", ollamaResp.Message.Content)
+		log.Debug().Str("raw_output", ollamaResp.Message.Content).Msg("Raw LLM output")
 		return nil, fmt.Errorf("failed to parse LLM decisions JSON: %w", err)
 	}
 
