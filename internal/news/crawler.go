@@ -1,0 +1,170 @@
+package news
+
+import (
+	"context"
+	"crypto/sha256"
+	"fmt"
+	"log"
+	"time"
+
+	"github.com/mmcdole/gofeed"
+	"kraken-trader/internal/state"
+)
+
+// Crawler manages fetching news and signals and updating the state manager & ChromaDB
+type Crawler struct {
+	prismClient  *PrismClient
+	embedder     *Embedder
+	chromaClient *ChromaClient
+	stateMgr     *state.MemoryManager
+	feedParser   *gofeed.Parser
+	rssUrls      []string
+}
+
+// NewCrawler initializes the news and signals crawler
+func NewCrawler(prismClient *PrismClient, embedder *Embedder, chromaClient *ChromaClient, stateMgr *state.MemoryManager) *Crawler {
+	return &Crawler{
+		prismClient:  prismClient,
+		embedder:     embedder,
+		chromaClient: chromaClient,
+		stateMgr:     stateMgr,
+		feedParser:   gofeed.NewParser(),
+		rssUrls: []string{
+			"https://www.coindesk.com/arc/outboundfeeds/rss/",
+			"https://cointelegraph.com/rss",
+		},
+	}
+}
+
+// Start begins the periodic polling for news and signals
+func (c *Crawler) Start(ctx context.Context) {
+	log.Println("Starting News & Signals Crawler...")
+
+	// Initialize ChromaDB Collection
+	if c.chromaClient != nil {
+		if err := c.chromaClient.Initialize(ctx, "crypto_news"); err != nil {
+			log.Printf("Failed to initialize ChromaDB collection: %v", err)
+		} else {
+			log.Println("ChromaDB initialized for news embeddings.")
+		}
+	}
+
+	// Fast tick for signals (e.g., every 30 seconds)
+	signalTicker := time.NewTicker(30 * time.Second)
+	defer signalTicker.Stop()
+
+	// Slow tick for news (e.g., every 5 minutes)
+	newsTicker := time.NewTicker(5 * time.Minute)
+	defer newsTicker.Stop()
+
+	// Do initial fetches immediately
+	c.fetchSignals(ctx)
+	c.fetchNews(ctx)
+
+	for {
+		select {
+		case <-ctx.Done():
+			log.Println("News Crawler stopping...")
+			return
+		case <-signalTicker.C:
+			c.fetchSignals(ctx)
+		case <-newsTicker.C:
+			c.fetchNews(ctx)
+		}
+	}
+}
+
+func (c *Crawler) fetchSignals(ctx context.Context) {
+	if c.prismClient == nil || c.prismClient.apiKey == "" {
+		return // Skip if PRISM is not configured
+	}
+
+	// For the hackathon, we fetch BTC and ETH signals
+	summaries, err := c.prismClient.FetchSignalSummary(ctx, []string{"BTC", "ETH"})
+	if err != nil {
+		log.Printf("Error fetching PRISM signals: %v", err)
+		return
+	}
+
+	for _, s := range summaries {
+		// Update the RAM state manager so the LLM Prompt Builder has instant access
+		c.stateMgr.UpdateSignal(s.Symbol, s.Momentum, s.Breakout, s.Volume)
+	}
+}
+
+func (c *Crawler) fetchNews(ctx context.Context) {
+	var allArticles []NewsArticle
+
+	// Try PRISM first
+	if c.prismClient != nil && c.prismClient.apiKey != "" {
+		prismArticles, err := c.prismClient.FetchCryptoNews(ctx, 10)
+		if err == nil {
+			allArticles = append(allArticles, prismArticles...)
+		} else {
+			log.Printf("PRISM news fetch failed, falling back to RSS: %v", err)
+		}
+	}
+
+	// Fallback/Augment with RSS Feeds
+	for _, url := range c.rssUrls {
+		feed, err := c.feedParser.ParseURLWithContext(url, ctx)
+		if err != nil {
+			log.Printf("Error parsing RSS feed %s: %v", url, err)
+			continue
+		}
+
+		for i, item := range feed.Items {
+			if i >= 5 { // Only take top 5 per feed to avoid context bloat
+				break
+			}
+
+			hash := fmt.Sprintf("%x", sha256.Sum256([]byte(item.Link)))
+			pubDate := time.Now()
+			if item.PublishedParsed != nil {
+				pubDate = *item.PublishedParsed
+			}
+
+			allArticles = append(allArticles, NewsArticle{
+				ID:        hash,
+				Title:     item.Title,
+				Summary:   item.Description,
+				URL:       item.Link,
+				Source:    feed.Title,
+				Timestamp: pubDate,
+			})
+		}
+	}
+
+	if len(allArticles) == 0 {
+		return
+	}
+
+	// 1. Update the RAM state manager for quick dashboard/live access
+	var stateArticles []state.NewsArticle
+	for _, a := range allArticles {
+		stateArticles = append(stateArticles, state.NewsArticle{
+			ID:        a.ID,
+			Title:     a.Title,
+			Summary:   a.Summary,
+			Source:    a.Source,
+			Timestamp: a.Timestamp,
+		})
+	}
+	c.stateMgr.UpdateNews(stateArticles)
+
+	// 2. Embed and Store in ChromaDB for Semantic Search
+	if c.embedder != nil && c.chromaClient != nil {
+		embeddings, err := c.embedder.BatchEmbed(ctx, allArticles)
+		if err != nil {
+			log.Printf("Error embedding news articles: %v", err)
+			return
+		}
+
+		err = c.chromaClient.AddEmbeddings(ctx, allArticles, embeddings)
+		if err != nil {
+			log.Printf("Error storing embeddings in ChromaDB: %v", err)
+		} else {
+			log.Printf("Successfully embedded and stored %d articles in ChromaDB.", len(allArticles))
+		}
+	}
+}
