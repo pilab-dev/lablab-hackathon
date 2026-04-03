@@ -63,7 +63,7 @@ func TestStrategyEngine_Evaluate_LowLiquidity(t *testing.T) {
 
 	se := NewStrategyEngine(fe, sm)
 
-	err := st.PushTick(ctx, "BTCUSD", 100, 110, 105, 100)
+	err := st.PushTick(ctx, "BTCUSD", 100, 5.0, 110, 3.0, 105, 100)
 	require.NoError(t, err)
 
 	result, ok, err := se.Evaluate(ctx, "BTCUSD")
@@ -78,11 +78,11 @@ func TestStrategyEngine_Evaluate_BullishMomentum(t *testing.T) {
 
 	se := NewStrategyEngine(fe, sm)
 
-	err := st.PushTick(ctx, "BTCUSD", 100, 100.01, 100.005, 100)
+	err := st.PushTick(ctx, "BTCUSD", 100, 5.0, 100.01, 3.0, 100.005, 100)
 	require.NoError(t, err)
-	err = st.PushTick(ctx, "BTCUSD", 100, 100.01, 100.5, 120)
+	err = st.PushTick(ctx, "BTCUSD", 100, 5.0, 100.01, 3.0, 100.5, 120)
 	require.NoError(t, err)
-	err = st.PushTick(ctx, "BTCUSD", 100, 100.01, 101.0, 140)
+	err = st.PushTick(ctx, "BTCUSD", 100, 5.0, 100.01, 3.0, 101.0, 140)
 	require.NoError(t, err)
 
 	result, ok, err := se.Evaluate(ctx, "BTCUSD")
@@ -98,11 +98,11 @@ func TestStrategyEngine_Evaluate_BearishMomentum(t *testing.T) {
 
 	se := NewStrategyEngine(fe, sm)
 
-	err := st.PushTick(ctx, "BTCUSD", 100, 100.01, 101.0, 100)
+	err := st.PushTick(ctx, "BTCUSD", 100, 5.0, 100.01, 3.0, 101.0, 100)
 	require.NoError(t, err)
-	err = st.PushTick(ctx, "BTCUSD", 100, 100.01, 100.5, 80)
+	err = st.PushTick(ctx, "BTCUSD", 100, 5.0, 100.01, 3.0, 100.5, 80)
 	require.NoError(t, err)
-	err = st.PushTick(ctx, "BTCUSD", 100, 100.01, 100.0, 60)
+	err = st.PushTick(ctx, "BTCUSD", 100, 5.0, 100.01, 3.0, 100.0, 60)
 	require.NoError(t, err)
 
 	result, ok, err := se.Evaluate(ctx, "BTCUSD")

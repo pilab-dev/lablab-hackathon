@@ -52,9 +52,9 @@ func NewPipeline(
 }
 
 // ProcessTick ingests a raw tick, updates state, and runs the pipeline
-func (p *Pipeline) ProcessTick(ctx context.Context, pair string, bid, ask, last, volume float64) {
+func (p *Pipeline) ProcessTick(ctx context.Context, pair string, bid, bidVol, ask, askVol, last, volume float64) {
 	// Stage 0: Ingest — store tick in Redis
-	if err := p.tracker.PushTick(ctx, pair, bid, ask, last, volume); err != nil {
+	if err := p.tracker.PushTick(ctx, pair, bid, bidVol, ask, askVol, last, volume); err != nil {
 		log.Error().Err(err).Str("pair", pair).Msg("Pipeline: failed to push tick to Redis")
 		return
 	}

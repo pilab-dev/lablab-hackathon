@@ -9,17 +9,20 @@ import (
 
 // PairFeatures holds all derived metrics for a single trading pair
 type PairFeatures struct {
-	Pair        string  `json:"pair"`
-	Spread      float64 `json:"spread"`
-	SpreadPct   float64 `json:"spread_pct"`
-	MidPrice    float64 `json:"mid_price"`
-	Momentum    float64 `json:"momentum"`
-	MomentumPct float64 `json:"momentum_pct"`
-	VolumeDelta float64 `json:"volume_delta"`
-	Volatility  float64 `json:"volatility"`
-	SMA         float64 `json:"sma"`
-	Trend       string  `json:"trend"`
-	Liquidity   string  `json:"liquidity"`
+	Pair               string  `json:"pair"`
+	Spread             float64 `json:"spread"`
+	SpreadPct          float64 `json:"spread_pct"`
+	MidPrice           float64 `json:"mid_price"`
+	MicroPrice         float64 `json:"micro_price"`
+	OrderBookImbalance float64 `json:"order_book_imbalance"`
+	Momentum           float64 `json:"momentum"`
+	MomentumPct        float64 `json:"momentum_pct"`
+	VolumeDelta        float64 `json:"volume_delta"`
+	VolumeSurge        float64 `json:"volume_surge"`
+	Volatility         float64 `json:"volatility"`
+	SMA                float64 `json:"sma"`
+	Trend              string  `json:"trend"`
+	Liquidity          string  `json:"liquidity"`
 }
 
 // FeatureEngine computes derived metrics from raw tick data
@@ -55,6 +58,10 @@ func (fe *FeatureEngine) Compute(ctx context.Context, pair string) (*PairFeature
 		spreadPct = (spread / midPrice) * 100
 	}
 
+	microPrice := calcMicroPrice(current.Bid, current.Ask, current.BidVolume, current.AskVolume)
+
+	obi := calcOrderBookImbalance(current.BidVolume, current.AskVolume)
+
 	momentum := 0.0
 	momentumPct := 0.0
 	if hasPrev && prev.Last > 0 {
@@ -67,6 +74,8 @@ func (fe *FeatureEngine) Compute(ctx context.Context, pair string) (*PairFeature
 		volDelta = current.Volume - prev.Volume
 	}
 
+	volumeSurge, _, _ := fe.tracker.VolumeSurge(ctx, pair)
+
 	sma, _, _ := fe.tracker.SMA(ctx, pair)
 	volatility, _, _ := fe.tracker.Volatility(ctx, pair)
 	priceChangePct, _, _ := fe.tracker.PriceChangePct(ctx, pair)
@@ -75,17 +84,20 @@ func (fe *FeatureEngine) Compute(ctx context.Context, pair string) (*PairFeature
 	liquidity := fe.classifyLiquidity(spreadPct)
 
 	return &PairFeatures{
-		Pair:        pair,
-		Spread:      spread,
-		SpreadPct:   spreadPct,
-		MidPrice:    midPrice,
-		Momentum:    momentum,
-		MomentumPct: momentumPct,
-		VolumeDelta: volDelta,
-		Volatility:  volatility,
-		SMA:         sma,
-		Trend:       trend,
-		Liquidity:   liquidity,
+		Pair:               pair,
+		Spread:             spread,
+		SpreadPct:          spreadPct,
+		MidPrice:           midPrice,
+		MicroPrice:         microPrice,
+		OrderBookImbalance: obi,
+		Momentum:           momentum,
+		MomentumPct:        momentumPct,
+		VolumeDelta:        volDelta,
+		VolumeSurge:        volumeSurge,
+		Volatility:         volatility,
+		SMA:                sma,
+		Trend:              trend,
+		Liquidity:          liquidity,
 	}, true, nil
 }
 
@@ -168,4 +180,24 @@ func SMAFromPrices(prices []float64) float64 {
 		sum += p
 	}
 	return sum / float64(len(prices))
+}
+
+// calcMicroPrice calculates the micro-price using bid/ask prices and opposite volumes
+// P_m = (Price_bid * Vol_ask + Price_ask * Vol_bid) / (Vol_bid + Vol_ask)
+func calcMicroPrice(bid, ask, bidVol, askVol float64) float64 {
+	totalVol := bidVol + askVol
+	if totalVol == 0 {
+		return (bid + ask) / 2.0
+	}
+	return (bid*askVol + ask*bidVol) / totalVol
+}
+
+// calcOrderBookImbalance calculates the normalized difference between bid and ask volumes
+// OBI = (Vol_bid - Vol_ask) / (Vol_bid + Vol_ask)
+func calcOrderBookImbalance(bidVol, askVol float64) float64 {
+	totalVol := bidVol + askVol
+	if totalVol == 0 {
+		return 0
+	}
+	return (bidVol - askVol) / totalVol
 }

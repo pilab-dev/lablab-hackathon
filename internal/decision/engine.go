@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/rs/zerolog/log"
+	"kraken-trader/internal/features"
 	"kraken-trader/internal/news"
 	"kraken-trader/internal/repository"
 	"kraken-trader/internal/state"
@@ -23,10 +24,6 @@ type TradeDecision struct {
 	Reasoning  string  `json:"reasoning"`
 }
 
-type llmResponse struct {
-	Decisions []TradeDecision `json:"decisions"`
-}
-
 // Engine is the brain of the bot, powered by Llama 3.1
 type Engine struct {
 	ollamaURL    string
@@ -36,10 +33,11 @@ type Engine struct {
 	embedder     *news.Embedder
 	httpClient   *http.Client
 	repo         repository.Repository
+	featEngine   *features.FeatureEngine
 }
 
 // NewEngine creates a new Llama-based decision engine
-func NewEngine(ollamaURL, model string, stateMgr *state.MemoryManager, chroma *news.ChromaClient, embedder *news.Embedder, repo repository.Repository) *Engine {
+func NewEngine(ollamaURL, model string, stateMgr *state.MemoryManager, chroma *news.ChromaClient, embedder *news.Embedder, repo repository.Repository, featEngine *features.FeatureEngine) *Engine {
 	if ollamaURL == "" {
 		ollamaURL = "http://localhost:11434"
 	}
@@ -53,47 +51,93 @@ func NewEngine(ollamaURL, model string, stateMgr *state.MemoryManager, chroma *n
 		chromaClient: chroma,
 		embedder:     embedder,
 		repo:         repo,
+		featEngine:   featEngine,
 		httpClient: &http.Client{
 			Timeout: 60 * time.Second,
 		},
 	}
 }
 
+// SetFeatureEngine allows injecting the feature engine after initialization
+func (e *Engine) SetFeatureEngine(featEngine *features.FeatureEngine) {
+	e.featEngine = featEngine
+}
+
 // Decide runs the full inference loop for a set of pairs
 func (e *Engine) Decide(ctx context.Context, pairs []string) ([]TradeDecision, error) {
-	// 1. Gather Context
-	marketCtx := ""
-	signalsCtx := []string{}
-	for _, p := range pairs {
-		snap, ok := e.stateMgr.GetMarketSnapshot(p)
-		if ok {
-			marketCtx += fmt.Sprintf("- %s: Price $%.2f, Bid $%.2f, Ask $%.2f\n", p, snap.Last, snap.Bid, snap.Ask)
-			signalsCtx = append(signalsCtx, fmt.Sprintf("- %s: Momentum: %s, Breakout: %s, Vol: %s",
-				p, snap.MomentumSignal, snap.BreakoutSignal, snap.VolumeSignal))
-		}
-	}
+	allDecisions := []TradeDecision{}
 
-	// 2. Semantic News Search (ChromaDB)
-	// We search for news matching the current market "vibe" (e.g. "bitcoin price action")
-	newsCtx := []string{}
-	if e.chromaClient != nil && e.embedder != nil {
-		query := "bitcoin ethereum market price action sentiment"
-		emb, err := e.embedder.GenerateEmbedding(ctx, query)
-		if err == nil {
-			matches, err := e.chromaClient.QuerySimilar(ctx, emb, 5)
-			if err == nil {
-				for _, m := range matches {
-					newsCtx = append(newsCtx, fmt.Sprintf("- [%s] %s: %s", m.Source, m.Title, m.Summary))
-				}
+	for _, pair := range pairs {
+		snap, ok := e.stateMgr.GetMarketSnapshot(pair)
+		if !ok {
+			continue
+		}
+
+		var feat *features.PairFeatures
+		if e.featEngine != nil {
+			f, hasFeat, _ := e.featEngine.Compute(ctx, pair)
+			if hasFeat {
+				feat = f
 			}
 		}
+
+		price := snap.Last
+		spreadPct := 0.0
+		microPrice := 0.0
+		orderBookImb := 0.0
+		if feat != nil {
+			spreadPct = feat.SpreadPct
+			microPrice = feat.MicroPrice
+			orderBookImb = feat.OrderBookImbalance
+		} else if snap.Ask > 0 && snap.Bid > 0 {
+			spreadPct = ((snap.Ask - snap.Bid) / ((snap.Ask + snap.Bid) / 2.0)) * 100
+		}
+
+		rsi := PRISMSignalToRSI(snap.MomentumSignal)
+
+		macdSignal, macdHistogram := PRISMSignalToMACD(snap.MomentumSignal, snap.BreakoutSignal)
+
+		ema20 := 0.0
+		ema50 := 0.0
+		var volumeRatio float64
+		if feat != nil {
+			ema20 = feat.SMA
+			ema50 = feat.SMA
+			volumeRatio = feat.VolumeSurge
+		} else {
+			volumeRatio = PRISMStrengthToVolumeRatio(snap.VolumeSignal)
+		}
+
+		sentimentScore := PRISMToSentimentScore(snap.MomentumSignal)
+		sentimentSource := "PRISM:" + pair
+
+		momentumScore := PRISMToMomentumScore(snap.MomentumSignal)
+		lookbackBars := 20
+
+		input := BuildLLMInput(
+			pair, price, spreadPct,
+			microPrice, orderBookImb,
+			rsi, macdSignal, macdHistogram, ema20, ema50, volumeRatio,
+			sentimentScore, sentimentSource,
+			momentumScore, lookbackBars,
+		)
+
+		userPrompt, err := BuildUserPromptFromInput(input)
+		if err != nil {
+			log.Error().Err(err).Str("pair", pair).Msg("failed to build prompt")
+			continue
+		}
+
+		decisions, err := e.callOllama(ctx, userPrompt)
+		if err != nil {
+			log.Error().Err(err).Str("pair", pair).Msg("LLM decision failed")
+			continue
+		}
+
+		allDecisions = append(allDecisions, decisions...)
 	}
 
-	// 3. Build Prompt
-	userPrompt := BuildUserPrompt(marketCtx, signalsCtx, newsCtx, "Portfolio: $10,000 USD, Positions: 0")
-
-	// 4. Call Ollama
-	return e.callOllama(ctx, userPrompt)
+	return allDecisions, nil
 }
 
 func (e *Engine) callOllama(ctx context.Context, userPrompt string) ([]TradeDecision, error) {
@@ -104,9 +148,6 @@ func (e *Engine) callOllama(ctx context.Context, userPrompt string) ([]TradeDeci
 
 	messages := []message{
 		{Role: "system", Content: SystemPrompt},
-	}
-	for _, ex := range FewShotExamples {
-		messages = append(messages, message{Role: ex.Role, Content: ex.Content})
 	}
 	messages = append(messages, message{Role: "user", Content: userPrompt})
 
@@ -151,8 +192,8 @@ func (e *Engine) callOllama(ctx context.Context, userPrompt string) ([]TradeDeci
 		return nil, fmt.Errorf("failed to decode ollama response: %w", err)
 	}
 
-	var result llmResponse
-	if err := json.Unmarshal([]byte(ollamaResp.Message.Content), &result); err != nil {
+	var llmOut LLMOutput
+	if err := json.Unmarshal([]byte(ollamaResp.Message.Content), &llmOut); err != nil {
 		preview := ollamaResp.Message.Content
 		if len(preview) > 100 {
 			preview = preview[:100] + "..."
@@ -161,25 +202,55 @@ func (e *Engine) callOllama(ctx context.Context, userPrompt string) ([]TradeDeci
 		return nil, fmt.Errorf("failed to parse LLM decisions JSON: %w", err)
 	}
 
-	if e.repo != nil {
-		rawPrompt, _ := json.Marshal(messages)
-		for _, d := range result.Decisions {
+	sizePct := 0.0
+	switch llmOut.Sizing {
+	case "FULL":
+		sizePct = 10.0
+	case "HALF":
+		sizePct = 5.0
+	case "QUARTER":
+		sizePct = 2.5
+	case "SKIP":
+		sizePct = 0.0
+	}
+
+	reasoning := llmOut.Reasoning.PrimarySignal
+	if len(llmOut.Reasoning.Supporting) > 0 {
+		reasoning += "; " + llmOut.Reasoning.Supporting[0]
+	}
+
+	decisions := []TradeDecision{}
+	if llmOut.Action != "" {
+		_ = llmOut.EntryPrice
+		_ = llmOut.StopLoss
+		_ = llmOut.TakeProfit
+
+		decisions = append(decisions, TradeDecision{
+			Pair:       "",
+			Action:     llmOut.Action,
+			SizePct:    sizePct,
+			Confidence: llmOut.Confidence,
+			Reasoning:  reasoning,
+		})
+
+		if e.repo != nil {
+			rawPrompt, _ := json.Marshal(messages)
 			rec := repository.PromptRecord{
 				Type:       "decision",
-				Pair:       d.Pair,
+				Pair:       "",
 				RawPrompt:  string(rawPrompt),
 				RawAnswer:  ollamaResp.Message.Content,
 				Answer:     ollamaResp.Message.Content,
-				Action:     d.Action,
-				SizePct:    d.SizePct,
-				Confidence: d.Confidence,
+				Action:     llmOut.Action,
+				SizePct:    sizePct,
+				Confidence: llmOut.Confidence,
 				Success:    true,
 			}
 			_ = e.repo.SavePrompt(ctx, rec)
 		}
 	}
 
-	return result.Decisions, nil
+	return decisions, nil
 }
 
 func (e *Engine) GetPrompts(ctx context.Context, limit int) ([]repository.PromptRecord, error) {

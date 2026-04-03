@@ -134,6 +134,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 		chromaClient,
 		embedder,
 		promptRepo,
+		nil, // featureEngine will be set after initialization
 	)
 	log.Info().Msg("Decision engine initialized")
 
@@ -165,6 +166,9 @@ func runRun(cmd *cobra.Command, args []string) error {
 	// FeatureEngine — computes Spread, Momentum, Volatility, SMA, etc.
 	featureEngine := features.NewFeatureEngine(stateTracker)
 	log.Info().Msg("FeatureEngine initialized")
+
+	// Inject feature engine into decision engine
+	engine.SetFeatureEngine(featureEngine)
 
 	// StrategyEngine — combines features with PRISM sentiment
 	strategyEngine := strategy.NewStrategyEngine(featureEngine, stateMgr)
@@ -568,7 +572,9 @@ func runPipelineConsumer(ctx context.Context, natsClient *messaging.NATSClient, 
 		var tick struct {
 			Symbol string  `json:"symbol"`
 			Bid    float64 `json:"bid"`
+			BidQty float64 `json:"bid_qty"`
 			Ask    float64 `json:"ask"`
+			AskQty float64 `json:"ask_qty"`
 			Last   float64 `json:"last"`
 			Volume float64 `json:"volume"`
 		}
@@ -577,7 +583,7 @@ func runPipelineConsumer(ctx context.Context, natsClient *messaging.NATSClient, 
 			return
 		}
 
-		pipe.ProcessTick(ctx, tick.Symbol, tick.Bid, tick.Ask, tick.Last, tick.Volume)
+		pipe.ProcessTick(ctx, tick.Symbol, tick.Bid, tick.BidQty, tick.Ask, tick.AskQty, tick.Last, tick.Volume)
 	})
 
 	if err != nil {
