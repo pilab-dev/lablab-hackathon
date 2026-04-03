@@ -51,6 +51,11 @@ type Config struct {
 
 	// PRISM API
 	PrismAPIKey string `mapstructure:"PRISM_API_KEY"`
+
+	// Redis Configuration
+	RedisURL      string `mapstructure:"REDIS_URL"`
+	RedisPassword string `mapstructure:"REDIS_PASSWORD"`
+	RedisDB       int    `mapstructure:"REDIS_DB"`
 }
 
 // LoadConfig reads configuration from environment variables and config file
@@ -99,4 +104,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("API_PORT", 8081)
 	v.SetDefault("SQLITE_PATH", "./trader.db")
 	v.SetDefault("LOG_LEVEL", "info")
+	v.SetDefault("REDIS_URL", "localhost:6379")
+	v.SetDefault("REDIS_PASSWORD", "")
+	v.SetDefault("REDIS_DB", 0)
 }

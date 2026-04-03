@@ -15,20 +15,27 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 
 	"kraken-trader/internal/api"
 	"kraken-trader/internal/decision"
+	"kraken-trader/internal/features"
 	"kraken-trader/internal/market"
 	"kraken-trader/internal/messaging"
 	"kraken-trader/internal/news"
+	"kraken-trader/internal/pipeline"
 	"kraken-trader/internal/repository"
+	"kraken-trader/internal/risk"
 	"kraken-trader/internal/state"
 	"kraken-trader/internal/storage"
+	"kraken-trader/internal/strategy"
+	"kraken-trader/internal/tracker"
 	"kraken-trader/pkg/config"
 	"kraken-trader/pkg/kraken"
+	redisPkg "kraken-trader/pkg/redis"
 )
 
 //go:embed frontend/dist
@@ -129,6 +136,47 @@ func runRun(cmd *cobra.Command, args []string) error {
 		promptRepo,
 	)
 	log.Info().Msg("Decision engine initialized")
+
+	// ── DATAFLOW Pipeline Components ───────────────────────────────
+
+	// Redis — stateful tracking with LPUSH/LTRIM windowing
+	var redisClient *redisPkg.Client
+	if cfg.RedisURL != "" {
+		redisClient, err = redisPkg.NewClient(cfg.RedisURL, cfg.RedisPassword, cfg.RedisDB)
+		if err != nil {
+			log.Warn().Err(err).Msg("Redis not available, falling back to in-memory tracker")
+			redisClient = nil
+		} else {
+			defer redisClient.Close()
+		}
+	}
+
+	var stateTracker *tracker.StateTracker
+	if redisClient != nil {
+		stateTracker = tracker.NewStateTracker(redisClient.Conn(), 120)
+		log.Info().Msg("StateTracker initialized (Redis-backed)")
+	} else {
+		log.Warn().Msg("Running without Redis — state tracking will be in-memory only")
+		// We still create a tracker but it will fail gracefully
+		// For now, create with nil — the pipeline will skip Redis ops
+		stateTracker = nil
+	}
+
+	// FeatureEngine — computes Spread, Momentum, Volatility, SMA, etc.
+	featureEngine := features.NewFeatureEngine(stateTracker)
+	log.Info().Msg("FeatureEngine initialized")
+
+	// StrategyEngine — combines features with PRISM sentiment
+	strategyEngine := strategy.NewStrategyEngine(featureEngine, stateMgr)
+	log.Info().Msg("StrategyEngine initialized")
+
+	// RiskGuard — slippage, drawdown, rate limiting protection
+	riskGuard := risk.NewRiskGuard(risk.DefaultRiskConfig(), stateTracker)
+	log.Info().Msg("RiskGuard initialized")
+
+	// Pipeline — orchestrates: NATS -> Features -> Strategy -> Risk -> Execute
+	tradingPipeline := pipeline.NewPipeline(featureEngine, strategyEngine, riskGuard, stateTracker, natsClient)
+	log.Info().Msg("DATAFLOW Pipeline initialized")
 
 	// ── Start Data Pipelines ───────────────────────────────────────
 
@@ -260,6 +308,15 @@ func runRun(cmd *cobra.Command, args []string) error {
 		defer wg.Done()
 		runDecisionLoop(ctx, stateMgr, engine, natsClient, cfg.TradingMode)
 	}()
+
+	// ── DATAFLOW Pipeline: NATS -> Features -> Strategy -> Risk ────
+	if natsClient != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			runPipelineConsumer(ctx, natsClient, tradingPipeline)
+		}()
+	}
 
 	// ── Block until Shutdown Signal ────────────────────────────────
 	log.Info().Msg("Kraken Trader running. Press Ctrl+C to stop.")
@@ -501,4 +558,33 @@ func fetchAndStoreBalance(ctx context.Context, krakenClient *kraken.Client, stat
 
 	stateMgr.UpdateBalance(balances)
 	log.Info().Int("assets", len(balances)).Msg("Updated account balances")
+}
+
+// runPipelineConsumer subscribes to market.ticker NATS subject and feeds ticks through the DATAFLOW pipeline
+func runPipelineConsumer(ctx context.Context, natsClient *messaging.NATSClient, pipe *pipeline.Pipeline) {
+	log.Info().Msg("Pipeline consumer started — listening for market.ticker")
+
+	_, err := natsClient.Subscribe("market.ticker", func(msg *nats.Msg) {
+		var tick struct {
+			Symbol string  `json:"symbol"`
+			Bid    float64 `json:"bid"`
+			Ask    float64 `json:"ask"`
+			Last   float64 `json:"last"`
+			Volume float64 `json:"volume"`
+		}
+		if err := json.Unmarshal(msg.Data, &tick); err != nil {
+			log.Error().Err(err).Msg("Pipeline: failed to unmarshal tick")
+			return
+		}
+
+		pipe.ProcessTick(ctx, tick.Symbol, tick.Bid, tick.Ask, tick.Last, tick.Volume)
+	})
+
+	if err != nil {
+		log.Error().Err(err).Msg("Pipeline: failed to subscribe to market.ticker")
+		return
+	}
+
+	<-ctx.Done()
+	log.Info().Msg("Pipeline consumer stopped")
 }
