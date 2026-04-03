@@ -37,7 +37,12 @@ type Engine struct {
 	featEngine   *features.FeatureEngine
 }
 
-// NewEngine creates a new Llama-based decision engine
+// NewEngine creates an Engine configured to call a local LLM provider and wires its dependencies.
+// If `provider` is empty it defaults to "ollama". If `baseURL` is empty it defaults to
+// "http://localhost:11434" for the "ollama" provider and "http://localhost:1234" otherwise.
+// If `model` is empty it defaults to "llama3.1:8b". The returned Engine holds the provided
+// state manager, Chroma client, embedder, repository, feature engine, and an HTTP client
+// with a 60 second timeout.
 func NewEngine(provider, baseURL, model string, stateMgr *state.MemoryManager, chroma *news.ChromaClient, embedder *news.Embedder, repo repository.Repository, featEngine *features.FeatureEngine) *Engine {
 	if provider == "" {
 		provider = "ollama"

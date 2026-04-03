@@ -87,7 +87,10 @@ func LoadConfig(configPath string) (*Config, error) {
 	return &cfg, nil
 }
 
-// setDefaults sets default values for configuration
+// setDefaults registers the application's default configuration values on the provided viper instance.
+// It populates sensible defaults for trading, LLM (and Ollama/LMStudio), InfluxDB, ChromaDB, NATS, dashboard/API ports,
+// SQLite path, logging level, and Redis so they can be overridden by a config file or environment variables.
+// v is the viper instance to populate with those defaults.
 func setDefaults(v *viper.Viper) {
 	v.SetDefault("TRADING_MODE", "paper")
 	v.SetDefault("TRADE_INTERVAL", "30s")
