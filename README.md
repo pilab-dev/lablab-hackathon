@@ -102,16 +102,21 @@ Subscriptions are restored from SQLite on startup with `created_at` and `last_da
 
 ## API Endpoints (Port 8081)
 
+All endpoints are prefixed with `/api`.
+
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/health` | Health check |
-| GET | `/subscriptions` | List active subscriptions (symbols only) |
-| GET | `/subscriptions/detail` | List subscriptions with created_at, last_data timestamps |
-| POST | `/subscriptions` | Add subscription (body: `{"symbol": "BTC/USD"}`) |
-| DELETE | `/subscriptions/{symbol}` | Remove subscription |
-| GET | `/prompts` | List last 20 prompts with raw prompt/response |
-| GET | `/loglevel` | Get current console log level |
-| POST | `/loglevel` | Set console log level (body: `{"level": "trace\|debug\|info\|warn\|error"}`) |
+| GET | `/api/health` | Health check |
+| GET | `/api/subscriptions` | List active subscriptions (symbols only) |
+| GET | `/api/subscriptions/detail` | List subscriptions with created_at, last_data timestamps |
+| POST | `/api/subscriptions` | Add subscription (body: `{"symbol": "BTC/USD"}`) |
+| DELETE | `/api/subscriptions/{symbol}` | Remove subscription |
+| GET | `/api/assets` | List tradable assets |
+| GET | `/api/ticker/{symbol}` | Get ticker data (e.g., BTCUSD) |
+| GET | `/api/prompts` | List last 20 prompts with raw prompt/response |
+| GET | `/api/loglevel` | Get current console log level |
+| POST | `/api/loglevel` | Set console log level (body: `{"level": "trace\|debug\|info\|warn\|error"}`) |
+| GET | `/api/swagger/` | Swagger UI |
 
 ---
 

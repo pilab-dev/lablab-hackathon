@@ -258,13 +258,16 @@ cmd/trader/          # Application entry point
 cmd/trader/frontend/ # Embedded frontend build (auto-generated)
 internal/api/        # OpenAPI generated types and handlers
 internal/decision/   # LLM decision engine
+internal/messaging/  # NATS messaging client
 internal/news/       # News crawler, ChromaDB, embedder
 internal/market/     # Market data collection
+internal/repository/ # SQLite repositories
 internal/state/      # In-memory state management
 internal/storage/    # InfluxDB client & models
 frontend/            # React + MUI frontend source
 pkg/kraken/         # Kraken CLI wrapper
-configs/             # Docker & config files
+pkg/logger/         # Zerolog logger wrapper
+pkg/config/         # Viper configuration
 ```
 
 ---
@@ -344,6 +347,15 @@ cd frontend && pnpm dev  # Vite dev server (proxies /api to localhost:8081)
 - **Kraken CLI:** Must be installed in PATH (`kraken` command)
 - **Ollama:** Must be running with `llama3.1:8b` and `nomic-embed-text` models
 - **Docker:** For InfluxDB and ChromaDB services
+
+---
+
+## Data Persistence
+
+- **SQLite** (`trader.db`): Stores subscriptions and LLM prompts/responses
+- **InfluxDB**: Stores ticker price data for dashboards
+
+Subscriptions are restored from SQLite on startup with `created_at` and `last_data` timestamps.
 
 ---
 
