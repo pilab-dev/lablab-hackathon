@@ -102,7 +102,7 @@ func (e *Engine) Decide(ctx context.Context, pairs []string) ([]TradeDecision, e
 		var volumeRatio float64
 		if feat != nil {
 			ema20 = feat.SMA
-			ema50 = feat.SMA
+			ema50 = 0
 			volumeRatio = feat.VolumeSurge
 		} else {
 			volumeRatio = PRISMStrengthToVolumeRatio(snap.VolumeSignal)
@@ -128,7 +128,7 @@ func (e *Engine) Decide(ctx context.Context, pairs []string) ([]TradeDecision, e
 			continue
 		}
 
-		decisions, err := e.callOllama(ctx, userPrompt)
+		decisions, err := e.callOllama(ctx, pair, userPrompt)
 		if err != nil {
 			log.Error().Err(err).Str("pair", pair).Msg("LLM decision failed")
 			continue
@@ -140,7 +140,7 @@ func (e *Engine) Decide(ctx context.Context, pairs []string) ([]TradeDecision, e
 	return allDecisions, nil
 }
 
-func (e *Engine) callOllama(ctx context.Context, userPrompt string) ([]TradeDecision, error) {
+func (e *Engine) callOllama(ctx context.Context, pair string, userPrompt string) ([]TradeDecision, error) {
 	type message struct {
 		Role    string `json:"role"`
 		Content string `json:"content"`
@@ -226,7 +226,7 @@ func (e *Engine) callOllama(ctx context.Context, userPrompt string) ([]TradeDeci
 		_ = llmOut.TakeProfit
 
 		decisions = append(decisions, TradeDecision{
-			Pair:       "",
+			Pair:       pair,
 			Action:     llmOut.Action,
 			SizePct:    sizePct,
 			Confidence: llmOut.Confidence,
@@ -237,7 +237,7 @@ func (e *Engine) callOllama(ctx context.Context, userPrompt string) ([]TradeDeci
 			rawPrompt, _ := json.Marshal(messages)
 			rec := repository.PromptRecord{
 				Type:       "decision",
-				Pair:       "",
+				Pair:       pair,
 				RawPrompt:  string(rawPrompt),
 				RawAnswer:  ollamaResp.Message.Content,
 				Answer:     ollamaResp.Message.Content,

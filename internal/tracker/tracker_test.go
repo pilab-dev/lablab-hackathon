@@ -65,7 +65,7 @@ func TestStateTracker_PrevTick(t *testing.T) {
 	tick, ok, err := st.GetPrevTick(ctx, "BTCUSD")
 	require.NoError(t, err)
 	assert.True(t, ok)
-	assert.InDelta(t, 101.5, tick.Last, 0.001)
+	assert.InDelta(t, 100.5, tick.Last, 0.001)
 }
 
 func TestStateTracker_WindowTrims(t *testing.T) {
@@ -149,7 +149,7 @@ func TestStateTracker_PriceChangePct(t *testing.T) {
 	change, ok, err := st.PriceChangePct(ctx, "BTCUSD")
 	require.NoError(t, err)
 	assert.True(t, ok)
-	assert.InDelta(t, -9.09, change, 0.01)
+	assert.InDelta(t, 10.0, change, 0.01)
 }
 
 func TestStateTracker_VolumeDelta(t *testing.T) {
@@ -163,7 +163,7 @@ func TestStateTracker_VolumeDelta(t *testing.T) {
 	delta, ok, err := st.VolumeDelta(ctx, "BTCUSD")
 	require.NoError(t, err)
 	assert.True(t, ok)
-	assert.InDelta(t, -50.0, delta, 0.001)
+	assert.InDelta(t, 50.0, delta, 0.001)
 }
 
 func TestStateTracker_RecordTrade(t *testing.T) {

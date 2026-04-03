@@ -3,6 +3,7 @@ package tracker
 import (
 	"context"
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -59,7 +60,7 @@ func (st *StateTracker) PushTick(ctx context.Context, pair string, bid, bidVol, 
 
 // GetLastTick returns the most recent tick for a pair
 func (st *StateTracker) GetLastTick(ctx context.Context, pair string) (Tick, bool, error) {
-	val, err := st.rdb.LIndex(ctx, tickKey(pair), -1).Result()
+	val, err := st.rdb.LIndex(ctx, tickKey(pair), 0).Result()
 	if err == redis.Nil {
 		return Tick{}, false, nil
 	}
@@ -76,7 +77,7 @@ func (st *StateTracker) GetLastTick(ctx context.Context, pair string) (Tick, boo
 
 // GetPrevTick returns the second-most recent tick
 func (st *StateTracker) GetPrevTick(ctx context.Context, pair string) (Tick, bool, error) {
-	val, err := st.rdb.LIndex(ctx, tickKey(pair), -2).Result()
+	val, err := st.rdb.LIndex(ctx, tickKey(pair), 1).Result()
 	if err == redis.Nil {
 		return Tick{}, false, nil
 	}
@@ -168,8 +169,8 @@ func (st *StateTracker) PriceChangePct(ctx context.Context, pair string) (float6
 		return 0, false, nil
 	}
 
-	oldest := ticks[0].Last
-	newest := ticks[len(ticks)-1].Last
+	newest := ticks[0].Last
+	oldest := ticks[len(ticks)-1].Last
 
 	if oldest == 0 {
 		return 0, false, nil
@@ -187,7 +188,7 @@ func (st *StateTracker) VolumeDelta(ctx context.Context, pair string) (float64, 
 		return 0, false, nil
 	}
 
-	return ticks[len(ticks)-1].Volume - ticks[len(ticks)-2].Volume, true, nil
+	return ticks[0].Volume - ticks[1].Volume, true, nil
 }
 
 // VolumeSurge returns the ratio of current volume to average volume in the window
@@ -381,16 +382,5 @@ func stdDev(variance float64) float64 {
 	if variance < 0 {
 		return 0
 	}
-	return sqrt(variance)
-}
-
-func sqrt(x float64) float64 {
-	if x == 0 {
-		return 0
-	}
-	z := x
-	for i := 0; i < 20; i++ {
-		z -= (z*z - x) / (2 * z)
-	}
-	return z
+	return math.Sqrt(variance)
 }
