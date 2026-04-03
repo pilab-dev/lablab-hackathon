@@ -15,17 +15,23 @@ import type {
 import type {
   AddSubscription200,
   AddSubscriptionBody,
+  DashboardOverview,
   DeleteSubscription200,
   DeleteSubscriptionBody,
   GetAssets200,
   GetAssetsParams,
   GetHealth200,
+  GetHistory200,
+  GetHistoryParams,
   GetLogLevel200,
+  GetNews200,
   GetPairs200,
+  GetSignals200,
+  GetTrades200,
+  GetTradesParams,
   ListPrompts200,
   ListPromptsParams,
   ListSubscriptions200,
-  ListSubscriptionsDetail200,
   SetLogLevel200,
   SetLogLevelBody,
   TickerData
@@ -44,7 +50,7 @@ const getHealth = (
   }
 
 /**
- * @summary List active subscriptions
+ * @summary List active subscriptions with full details
  */
 const listSubscriptions = (
      options?: AxiosRequestConfig
@@ -75,17 +81,6 @@ const deleteSubscription = (
     return axiosInstance.post(
       `/subscriptions/delete`,
       deleteSubscriptionBody,options
-    );
-  }
-
-/**
- * @summary List subscriptions with detail
- */
-const listSubscriptionsDetail = (
-     options?: AxiosRequestConfig
- ): Promise<AxiosResponse<ListSubscriptionsDetail200>> => {
-    return axiosInstance.get(
-      `/subscriptions/detail`,options
     );
   }
 
@@ -160,15 +155,79 @@ const getTicker = (
     );
   }
 
-return {getHealth,listSubscriptions,addSubscription,deleteSubscription,listSubscriptionsDetail,listPrompts,getLogLevel,setLogLevel,getAssets,getPairs,getTicker}};
+/**
+ * @summary Get historical OHLC data for a symbol
+ */
+const getHistory = (
+    symbol: string,
+    params?: GetHistoryParams, options?: AxiosRequestConfig
+ ): Promise<AxiosResponse<GetHistory200>> => {
+    return axiosInstance.get(
+      `/history/${symbol}`,{
+    ...options,
+        params: {...params, ...options?.params},}
+    );
+  }
+
+/**
+ * @summary Get consolidated dashboard overview
+ */
+const getDashboard = (
+     options?: AxiosRequestConfig
+ ): Promise<AxiosResponse<DashboardOverview>> => {
+    return axiosInstance.get(
+      `/dashboard`,options
+    );
+  }
+
+/**
+ * @summary Get PRISM technical signal summaries
+ */
+const getSignals = (
+     options?: AxiosRequestConfig
+ ): Promise<AxiosResponse<GetSignals200>> => {
+    return axiosInstance.get(
+      `/signals`,options
+    );
+  }
+
+/**
+ * @summary Get recent news articles
+ */
+const getNews = (
+     options?: AxiosRequestConfig
+ ): Promise<AxiosResponse<GetNews200>> => {
+    return axiosInstance.get(
+      `/news`,options
+    );
+  }
+
+/**
+ * @summary Get trade execution history
+ */
+const getTrades = (
+    params?: GetTradesParams, options?: AxiosRequestConfig
+ ): Promise<AxiosResponse<GetTrades200>> => {
+    return axiosInstance.get(
+      `/trades`,{
+    ...options,
+        params: {...params, ...options?.params},}
+    );
+  }
+
+return {getHealth,listSubscriptions,addSubscription,deleteSubscription,listPrompts,getLogLevel,setLogLevel,getAssets,getPairs,getTicker,getHistory,getDashboard,getSignals,getNews,getTrades}};
 export type GetHealthResult = AxiosResponse<GetHealth200>
 export type ListSubscriptionsResult = AxiosResponse<ListSubscriptions200>
 export type AddSubscriptionResult = AxiosResponse<AddSubscription200>
 export type DeleteSubscriptionResult = AxiosResponse<DeleteSubscription200>
-export type ListSubscriptionsDetailResult = AxiosResponse<ListSubscriptionsDetail200>
 export type ListPromptsResult = AxiosResponse<ListPrompts200>
 export type GetLogLevelResult = AxiosResponse<GetLogLevel200>
 export type SetLogLevelResult = AxiosResponse<SetLogLevel200>
 export type GetAssetsResult = AxiosResponse<GetAssets200>
 export type GetPairsResult = AxiosResponse<GetPairs200>
 export type GetTickerResult = AxiosResponse<TickerData>
+export type GetHistoryResult = AxiosResponse<GetHistory200>
+export type GetDashboardResult = AxiosResponse<DashboardOverview>
+export type GetSignalsResult = AxiosResponse<GetSignals200>
+export type GetNewsResult = AxiosResponse<GetNews200>
+export type GetTradesResult = AxiosResponse<GetTrades200>

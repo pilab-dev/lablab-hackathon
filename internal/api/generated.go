@@ -19,6 +19,30 @@ import (
 	"github.com/oapi-codegen/runtime"
 )
 
+// Defines values for GetHistoryParamsTimeframe.
+const (
+	N1d GetHistoryParamsTimeframe = "1d"
+	N1h GetHistoryParamsTimeframe = "1h"
+	N1w GetHistoryParamsTimeframe = "1w"
+	N4h GetHistoryParamsTimeframe = "4h"
+)
+
+// Valid indicates whether the value is a known member of the GetHistoryParamsTimeframe enum.
+func (e GetHistoryParamsTimeframe) Valid() bool {
+	switch e {
+	case N1d:
+		return true
+	case N1h:
+		return true
+	case N1w:
+		return true
+	case N4h:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SetLogLevelJSONBodyLevel.
 const (
 	Debug SetLogLevelJSONBodyLevel = "debug"
@@ -57,6 +81,63 @@ type AssetInfo struct {
 	Status          *string  `json:"status,omitempty"`
 }
 
+// DashboardOverview defines model for DashboardOverview.
+type DashboardOverview struct {
+	MarketSnapshot     *[]MarketSnapshot   `json:"market_snapshot,omitempty"`
+	Portfolio          *PortfolioSummary   `json:"portfolio,omitempty"`
+	RecentAlerts       *[]PriceAlert       `json:"recent_alerts,omitempty"`
+	RecentDecisions    *[]PromptRecord     `json:"recent_decisions,omitempty"`
+	SubscriptionHealth *SubscriptionHealth `json:"subscription_health,omitempty"`
+}
+
+// MarketSnapshot defines model for MarketSnapshot.
+type MarketSnapshot struct {
+	Ask       *float32   `json:"ask,omitempty"`
+	Bid       *float32   `json:"bid,omitempty"`
+	Last      *float32   `json:"last,omitempty"`
+	Pair      *string    `json:"pair,omitempty"`
+	Sparkline *[]float32 `json:"sparkline,omitempty"`
+	UpdatedAt *time.Time `json:"updated_at,omitempty"`
+	Volume24h *float32   `json:"volume_24h,omitempty"`
+}
+
+// NewsItem defines model for NewsItem.
+type NewsItem struct {
+	Id        *string    `json:"id,omitempty"`
+	Source    *string    `json:"source,omitempty"`
+	Summary   *string    `json:"summary,omitempty"`
+	Timestamp *time.Time `json:"timestamp,omitempty"`
+	Title     *string    `json:"title,omitempty"`
+}
+
+// OHLCData defines model for OHLCData.
+type OHLCData struct {
+	Close     *float32   `json:"close,omitempty"`
+	High      *float32   `json:"high,omitempty"`
+	Low       *float32   `json:"low,omitempty"`
+	Open      *float32   `json:"open,omitempty"`
+	Timestamp *time.Time `json:"timestamp,omitempty"`
+	Volume    *float32   `json:"volume,omitempty"`
+}
+
+// PortfolioSummary defines model for PortfolioSummary.
+type PortfolioSummary struct {
+	Balances      *map[string]float32 `json:"balances,omitempty"`
+	OpenPositions *int                `json:"open_positions,omitempty"`
+	TotalValueUsd *float32            `json:"total_value_usd,omitempty"`
+	UpdatedAt     *time.Time          `json:"updated_at,omitempty"`
+}
+
+// PriceAlert defines model for PriceAlert.
+type PriceAlert struct {
+	ChangePct *float32   `json:"change_pct,omitempty"`
+	Current   *float32   `json:"current,omitempty"`
+	Direction *string    `json:"direction,omitempty"`
+	Pair      *string    `json:"pair,omitempty"`
+	Previous  *float32   `json:"previous,omitempty"`
+	UpdatedAt *time.Time `json:"updated_at,omitempty"`
+}
+
 // PromptRecord defines model for PromptRecord.
 type PromptRecord struct {
 	Action     *string    `json:"action,omitempty"`
@@ -72,12 +153,30 @@ type PromptRecord struct {
 	Type       *string    `json:"type,omitempty"`
 }
 
+// SignalSummary defines model for SignalSummary.
+type SignalSummary struct {
+	BreakoutSignal *string    `json:"breakout_signal,omitempty"`
+	MomentumSignal *string    `json:"momentum_signal,omitempty"`
+	Symbol         *string    `json:"symbol,omitempty"`
+	UpdatedAt      *time.Time `json:"updated_at,omitempty"`
+	VolumeSignal   *string    `json:"volume_signal,omitempty"`
+}
+
 // SubscriptionDetail defines model for SubscriptionDetail.
 type SubscriptionDetail struct {
 	CreatedAt *time.Time `json:"created_at,omitempty"`
 	IsActive  *bool      `json:"is_active,omitempty"`
 	LastData  *time.Time `json:"last_data,omitempty"`
+	LastError *string    `json:"last_error,omitempty"`
 	Symbol    *string    `json:"symbol,omitempty"`
+}
+
+// SubscriptionHealth defines model for SubscriptionHealth.
+type SubscriptionHealth struct {
+	Active  *int               `json:"active,omitempty"`
+	Errored *int               `json:"errored,omitempty"`
+	Errors  *map[string]string `json:"errors,omitempty"`
+	Stale   *int               `json:"stale,omitempty"`
 }
 
 // TickerData defines model for TickerData.
@@ -88,6 +187,21 @@ type TickerData struct {
 	Symbol    *string    `json:"symbol,omitempty"`
 	UpdatedAt *time.Time `json:"updated_at,omitempty"`
 	Volume    *float32   `json:"volume,omitempty"`
+}
+
+// TradeRecord defines model for TradeRecord.
+type TradeRecord struct {
+	Action     *string    `json:"action,omitempty"`
+	Confidence *float32   `json:"confidence,omitempty"`
+	Cost       *float32   `json:"cost,omitempty"`
+	Fee        *float32   `json:"fee,omitempty"`
+	Mode       *string    `json:"mode,omitempty"`
+	OrderType  *string    `json:"order_type,omitempty"`
+	Pair       *string    `json:"pair,omitempty"`
+	Price      *float32   `json:"price,omitempty"`
+	Reasoning  *string    `json:"reasoning,omitempty"`
+	Size       *float32   `json:"size,omitempty"`
+	Timestamp  *time.Time `json:"timestamp,omitempty"`
 }
 
 // TradingPair defines model for TradingPair.
@@ -106,6 +220,15 @@ type TradingPair struct {
 type GetAssetsParams struct {
 	EnabledOnly *bool `form:"enabled_only,omitempty" json:"enabled_only,omitempty"`
 }
+
+// GetHistoryParams defines parameters for GetHistory.
+type GetHistoryParams struct {
+	Timeframe *GetHistoryParamsTimeframe `form:"timeframe,omitempty" json:"timeframe,omitempty"`
+	Limit     *int                       `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// GetHistoryParamsTimeframe defines parameters for GetHistory.
+type GetHistoryParamsTimeframe string
 
 // SetLogLevelJSONBody defines parameters for SetLogLevel.
 type SetLogLevelJSONBody struct {
@@ -130,6 +253,11 @@ type DeleteSubscriptionJSONBody struct {
 	Symbol string `json:"symbol"`
 }
 
+// GetTradesParams defines parameters for GetTrades.
+type GetTradesParams struct {
+	Limit *int `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
 // SetLogLevelJSONRequestBody defines body for SetLogLevel for application/json ContentType.
 type SetLogLevelJSONRequestBody SetLogLevelJSONBody
 
@@ -144,22 +272,34 @@ type ServerInterface interface {
 	// Get tradable assets
 	// (GET /assets)
 	GetAssets(c *gin.Context, params GetAssetsParams)
+	// Get consolidated dashboard overview
+	// (GET /dashboard)
+	GetDashboard(c *gin.Context)
 	// Health check
 	// (GET /health)
 	GetHealth(c *gin.Context)
+	// Get historical OHLC data for a symbol
+	// (GET /history/{symbol})
+	GetHistory(c *gin.Context, symbol string, params GetHistoryParams)
 	// Get current log level
 	// (GET /loglevel)
 	GetLogLevel(c *gin.Context)
 	// Set console log level
 	// (POST /loglevel)
 	SetLogLevel(c *gin.Context)
+	// Get recent news articles
+	// (GET /news)
+	GetNews(c *gin.Context)
 	// Get available trading pairs for subscriptions
 	// (GET /pairs)
 	GetPairs(c *gin.Context)
 	// List recent prompts
 	// (GET /prompts)
 	ListPrompts(c *gin.Context, params ListPromptsParams)
-	// List active subscriptions
+	// Get PRISM technical signal summaries
+	// (GET /signals)
+	GetSignals(c *gin.Context)
+	// List active subscriptions with full details
 	// (GET /subscriptions)
 	ListSubscriptions(c *gin.Context)
 	// Add a new subscription
@@ -168,12 +308,12 @@ type ServerInterface interface {
 	// Remove a subscription
 	// (POST /subscriptions/delete)
 	DeleteSubscription(c *gin.Context)
-	// List subscriptions with detail
-	// (GET /subscriptions/detail)
-	ListSubscriptionsDetail(c *gin.Context)
 	// Get current ticker for a symbol
 	// (GET /ticker/{symbol})
 	GetTicker(c *gin.Context, symbol string)
+	// Get trade execution history
+	// (GET /trades)
+	GetTrades(c *gin.Context, params GetTradesParams)
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -211,6 +351,19 @@ func (siw *ServerInterfaceWrapper) GetAssets(c *gin.Context) {
 	siw.Handler.GetAssets(c, params)
 }
 
+// GetDashboard operation middleware
+func (siw *ServerInterfaceWrapper) GetDashboard(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetDashboard(c)
+}
+
 // GetHealth operation middleware
 func (siw *ServerInterfaceWrapper) GetHealth(c *gin.Context) {
 
@@ -222,6 +375,49 @@ func (siw *ServerInterfaceWrapper) GetHealth(c *gin.Context) {
 	}
 
 	siw.Handler.GetHealth(c)
+}
+
+// GetHistory operation middleware
+func (siw *ServerInterfaceWrapper) GetHistory(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "symbol" -------------
+	var symbol string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "symbol", c.Param("symbol"), &symbol, runtime.BindStyledParameterOptions{Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter symbol: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetHistoryParams
+
+	// ------------- Optional query parameter "timeframe" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "timeframe", c.Request.URL.Query(), &params.Timeframe, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter timeframe: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", c.Request.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter limit: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetHistory(c, symbol, params)
 }
 
 // GetLogLevel operation middleware
@@ -248,6 +444,19 @@ func (siw *ServerInterfaceWrapper) SetLogLevel(c *gin.Context) {
 	}
 
 	siw.Handler.SetLogLevel(c)
+}
+
+// GetNews operation middleware
+func (siw *ServerInterfaceWrapper) GetNews(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetNews(c)
 }
 
 // GetPairs operation middleware
@@ -289,6 +498,19 @@ func (siw *ServerInterfaceWrapper) ListPrompts(c *gin.Context) {
 	siw.Handler.ListPrompts(c, params)
 }
 
+// GetSignals operation middleware
+func (siw *ServerInterfaceWrapper) GetSignals(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetSignals(c)
+}
+
 // ListSubscriptions operation middleware
 func (siw *ServerInterfaceWrapper) ListSubscriptions(c *gin.Context) {
 
@@ -328,19 +550,6 @@ func (siw *ServerInterfaceWrapper) DeleteSubscription(c *gin.Context) {
 	siw.Handler.DeleteSubscription(c)
 }
 
-// ListSubscriptionsDetail operation middleware
-func (siw *ServerInterfaceWrapper) ListSubscriptionsDetail(c *gin.Context) {
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		middleware(c)
-		if c.IsAborted() {
-			return
-		}
-	}
-
-	siw.Handler.ListSubscriptionsDetail(c)
-}
-
 // GetTicker operation middleware
 func (siw *ServerInterfaceWrapper) GetTicker(c *gin.Context) {
 
@@ -363,6 +572,32 @@ func (siw *ServerInterfaceWrapper) GetTicker(c *gin.Context) {
 	}
 
 	siw.Handler.GetTicker(c, symbol)
+}
+
+// GetTrades operation middleware
+func (siw *ServerInterfaceWrapper) GetTrades(c *gin.Context) {
+
+	var err error
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetTradesParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", c.Request.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter limit: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetTrades(c, params)
 }
 
 // GinServerOptions provides options for the Gin server.
@@ -393,42 +628,58 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	}
 
 	router.GET(options.BaseURL+"/assets", wrapper.GetAssets)
+	router.GET(options.BaseURL+"/dashboard", wrapper.GetDashboard)
 	router.GET(options.BaseURL+"/health", wrapper.GetHealth)
+	router.GET(options.BaseURL+"/history/:symbol", wrapper.GetHistory)
 	router.GET(options.BaseURL+"/loglevel", wrapper.GetLogLevel)
 	router.POST(options.BaseURL+"/loglevel", wrapper.SetLogLevel)
+	router.GET(options.BaseURL+"/news", wrapper.GetNews)
 	router.GET(options.BaseURL+"/pairs", wrapper.GetPairs)
 	router.GET(options.BaseURL+"/prompts", wrapper.ListPrompts)
+	router.GET(options.BaseURL+"/signals", wrapper.GetSignals)
 	router.GET(options.BaseURL+"/subscriptions", wrapper.ListSubscriptions)
 	router.POST(options.BaseURL+"/subscriptions", wrapper.AddSubscription)
 	router.POST(options.BaseURL+"/subscriptions/delete", wrapper.DeleteSubscription)
-	router.GET(options.BaseURL+"/subscriptions/detail", wrapper.ListSubscriptionsDetail)
 	router.GET(options.BaseURL+"/ticker/:symbol", wrapper.GetTicker)
+	router.GET(options.BaseURL+"/trades", wrapper.GetTrades)
 }
 
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"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",
+	"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",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

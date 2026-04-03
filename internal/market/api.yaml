@@ -25,13 +25,13 @@ paths:
 
   /subscriptions:
     get:
-      summary: List active subscriptions
+      summary: List active subscriptions with full details
       operationId: listSubscriptions
       tags:
         - Subscriptions
       responses:
         '200':
-          description: List of active subscriptions
+          description: List of active subscriptions with details
           content:
             application/json:
               schema:
@@ -112,27 +112,6 @@ paths:
           description: Bad request
         '404':
           description: Not found
-
-  /subscriptions/detail:
-    get:
-      summary: List subscriptions with detail
-      operationId: listSubscriptionsDetail
-      tags:
-        - Subscriptions
-      responses:
-        '200':
-          description: List of subscriptions with timestamps
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  subscriptions:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/SubscriptionDetail'
-                  count:
-                    type: integer
 
   /prompts:
     get:
@@ -280,6 +259,142 @@ paths:
               schema:
                 $ref: '#/components/schemas/TickerData'
 
+  /history/{symbol}:
+     get:
+       summary: Get historical OHLC data for a symbol
+       operationId: getHistory
+       tags:
+         - Market
+       parameters:
+         - name: symbol
+           in: path
+           required: true
+           schema:
+             type: string
+             example: BTC/USD
+         - name: timeframe
+           in: query
+           schema:
+             type: string
+             enum: [1h, 4h, 1d, 1w]
+             default: 1d
+             description: Timeframe for OHLC aggregation
+         - name: limit
+           in: query
+           schema:
+             type: integer
+             default: 100
+             minimum: 1
+             maximum: 1000
+             description: Maximum number of data points to return
+       responses:
+         '200':
+           description: Historical OHLC data
+           content:
+             application/json:
+               schema:
+                 type: object
+                 properties:
+                   symbol:
+                     type: string
+                   timeframe:
+                     type: string
+                   data:
+                     type: array
+                     items:
+                       $ref: '#/components/schemas/OHLCData'
+                   count:
+                     type: integer
+         '400':
+           description: Invalid parameters
+         '404':
+           description: Symbol not found
+
+  /dashboard:
+    get:
+      summary: Get consolidated dashboard overview
+      operationId: getDashboard
+      tags:
+        - Dashboard
+      responses:
+        '200':
+          description: Dashboard overview data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardOverview'
+
+  /signals:
+    get:
+      summary: Get PRISM technical signal summaries
+      operationId: getSignals
+      tags:
+        - Dashboard
+      responses:
+        '200':
+          description: Signal summaries for all subscribed pairs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  signals:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SignalSummary'
+                  count:
+                    type: integer
+
+  /news:
+    get:
+      summary: Get recent news articles
+      operationId: getNews
+      tags:
+        - Dashboard
+      responses:
+        '200':
+          description: Recent news articles
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  news:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/NewsItem'
+                  count:
+                    type: integer
+
+  /trades:
+    get:
+      summary: Get trade execution history
+      operationId: getTrades
+      tags:
+        - Dashboard
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 500
+      responses:
+        '200':
+          description: Trade execution history
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  trades:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TradeRecord'
+                  count:
+                    type: integer
+
 components:
   schemas:
     TickerData:
@@ -298,6 +413,23 @@ components:
         updated_at:
           type: string
           format: date-time
+
+    OHLCData:
+      type: object
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        open:
+          type: number
+        high:
+          type: number
+        low:
+          type: number
+        close:
+          type: number
+        volume:
+          type: number
 
     AssetInfo:
       type: object
@@ -343,6 +475,8 @@ components:
         last_data:
           type: string
           format: date-time
+        last_error:
+          type: string
 
     PromptRecord:
       type: object
@@ -370,3 +504,147 @@ components:
           type: number
         success:
           type: boolean
+
+    DashboardOverview:
+      type: object
+      properties:
+        portfolio:
+          $ref: '#/components/schemas/PortfolioSummary'
+        market_snapshot:
+          type: array
+          items:
+            $ref: '#/components/schemas/MarketSnapshot'
+        subscription_health:
+          $ref: '#/components/schemas/SubscriptionHealth'
+        recent_decisions:
+          type: array
+          items:
+            $ref: '#/components/schemas/PromptRecord'
+        recent_alerts:
+          type: array
+          items:
+            $ref: '#/components/schemas/PriceAlert'
+
+    PortfolioSummary:
+      type: object
+      properties:
+        total_value_usd:
+          type: number
+        balances:
+          type: object
+          additionalProperties:
+            type: number
+        open_positions:
+          type: integer
+        updated_at:
+          type: string
+          format: date-time
+
+    MarketSnapshot:
+      type: object
+      properties:
+        pair:
+          type: string
+        bid:
+          type: number
+        ask:
+          type: number
+        last:
+          type: number
+        volume_24h:
+          type: number
+        updated_at:
+          type: string
+          format: date-time
+        sparkline:
+          type: array
+          items:
+            type: number
+
+    SubscriptionHealth:
+      type: object
+      properties:
+        active:
+          type: integer
+        stale:
+          type: integer
+        errored:
+          type: integer
+        errors:
+          type: object
+          additionalProperties:
+            type: string
+
+    PriceAlert:
+      type: object
+      properties:
+        pair:
+          type: string
+        change_pct:
+          type: number
+        current:
+          type: number
+        previous:
+          type: number
+        updated_at:
+          type: string
+          format: date-time
+        direction:
+          type: string
+
+    SignalSummary:
+      type: object
+      properties:
+        symbol:
+          type: string
+        momentum_signal:
+          type: string
+        breakout_signal:
+          type: string
+        volume_signal:
+          type: string
+        updated_at:
+          type: string
+          format: date-time
+
+    NewsItem:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        summary:
+          type: string
+        source:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+
+    TradeRecord:
+      type: object
+      properties:
+        pair:
+          type: string
+        action:
+          type: string
+        order_type:
+          type: string
+        size:
+          type: number
+        price:
+          type: number
+        cost:
+          type: number
+        fee:
+          type: number
+        mode:
+          type: string
+        reasoning:
+          type: string
+        confidence:
+          type: number
+        timestamp:
+          type: string
+          format: date-time

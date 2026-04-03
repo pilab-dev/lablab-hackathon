@@ -21,12 +21,6 @@ export const useSubscriptions = () =>
     queryFn: () => krakenApi.listSubscriptions().then(res => res.data),
   });
 
-export const useSubscriptionDetails = () =>
-  useQuery({
-    queryKey: ['subscriptions', 'detail'],
-    queryFn: () => krakenApi.listSubscriptionsDetail().then(res => res.data),
-  });
-
 export const useAddSubscription = () => {
   const qc = useQueryClient();
   return useMutation({
@@ -75,3 +69,46 @@ export const useSetLogLevel = () => {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['loglevel'] }),
   });
 };
+
+export const useHistoryData = (symbol: string, timeframe: '1h' | '4h' | '1d' | '1w' = '1d', limit = 100) =>
+  useQuery({
+    queryKey: ['history', symbol, timeframe, limit],
+    queryFn: () => krakenApi.getHistory(symbol, { timeframe, limit }).then(res => res.data),
+    enabled: !!symbol,
+  });
+
+export const useTicker = (symbol: string) =>
+  useQuery({
+    queryKey: ['ticker', symbol],
+    queryFn: () => krakenApi.getTicker(symbol).then(res => res.data),
+    enabled: !!symbol,
+    refetchInterval: 5000,
+  });
+
+export const useDashboard = () =>
+  useQuery({
+    queryKey: ['dashboard'],
+    queryFn: () => krakenApi.getDashboard().then(res => res.data),
+    refetchInterval: 5000,
+  });
+
+export const useSignals = () =>
+  useQuery({
+    queryKey: ['signals'],
+    queryFn: () => krakenApi.getSignals().then(res => res.data),
+    refetchInterval: 15000,
+  });
+
+export const useNews = () =>
+  useQuery({
+    queryKey: ['news'],
+    queryFn: () => krakenApi.getNews().then(res => res.data),
+    refetchInterval: 60000,
+  });
+
+export const useTrades = (limit = 50) =>
+  useQuery({
+    queryKey: ['trades', limit],
+    queryFn: () => krakenApi.getTrades({ limit }).then(res => res.data),
+    refetchInterval: 10000,
+  });

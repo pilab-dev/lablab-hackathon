@@ -24,19 +24,9 @@ import { SubscriptionsPage } from './pages/Subscriptions';
 import { AssetsPage } from './pages/Assets';
 import { PromptsPage } from './pages/Prompts';
 import { SettingsPage } from './pages/Settings';
+import { DashboardPage } from './pages/Dashboard';
 
 const drawerWidth = 220;
-
-function DashboardPlaceholder() {
-  return (
-    <Box>
-      <Typography variant="h5" sx={{ mb: 3 }}>Dashboard</Typography>
-      <Typography color="text.secondary">
-        Welcome to Kraken Trader. Use the navigation to manage subscriptions, view assets, and monitor prompts.
-      </Typography>
-    </Box>
-  );
-}
 
 const navItems = [
   { path: '/', label: 'Dashboard', icon: <DashboardIcon /> },
@@ -89,7 +79,7 @@ export default function App() {
           <Toolbar />
           <Container maxWidth="lg">
             <Routes>
-              <Route path="/" element={<DashboardPlaceholder />} />
+              <Route path="/" element={<DashboardPage />} />
               <Route path="/subscriptions" element={<SubscriptionsPage />} />
               <Route path="/assets" element={<AssetsPage />} />
               <Route path="/prompts" element={<PromptsPage />} />

@@ -6,10 +6,12 @@
  * OpenAPI spec version: 1.0.0
  */
 
-export interface SubscriptionDetail {
-  symbol?: string;
-  is_active?: boolean;
-  created_at?: string;
-  last_data?: string;
-  last_error?: string;
+export interface MarketSnapshot {
+  pair?: string;
+  bid?: number;
+  ask?: number;
+  last?: number;
+  volume_24h?: number;
+  updated_at?: string;
+  sparkline?: number[];
 }

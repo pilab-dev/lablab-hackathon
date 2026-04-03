@@ -45,6 +45,8 @@ func TestWSHandlerCasesFromJSON(t *testing.T) {
 				state:         mem,
 				subscriptions: make(map[string]bool),
 				pairsCache:    make(map[string]string),
+				pendingSubs:   make(map[string]string),
+				lastErrors:    make(map[string]string),
 			}
 
 			for k, v := range tc.PreSubscriptions {

@@ -147,7 +147,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 	router := gin.Default()
 
 	// API routes group with /api prefix
-	apiServer := api.NewServer(collector, engine, krakenClient, stateMgr)
+	apiServer := api.NewServer(collector, engine, krakenClient, stateMgr, dbClient)
 	api.RegisterHandlersWithOptions(router, apiServer, api.GinServerOptions{BaseURL: "/api"})
 
 	// Serve embedded OpenAPI spec and Swagger UI
