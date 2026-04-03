@@ -70,6 +70,26 @@ func (rg *RiskGuard) Check(ctx context.Context, pair string, action string, size
 	maxSize := rg.cfg.MaxPositionSizePct
 	adjConfidence := confidence
 
+	// Graceful degradation when tracker is unavailable
+	if rg.tracker == nil {
+		if confidence < rg.cfg.MinConfidence {
+			approved = false
+			reasons = append(reasons, fmt.Sprintf("confidence %.2f below threshold %.2f", confidence, rg.cfg.MinConfidence))
+		}
+		if len(reasons) == 0 {
+			reasons = append(reasons, "all risk checks passed (tracker unavailable)")
+		}
+		return &RiskAssessment{
+			Approved:      approved,
+			Reasons:       reasons,
+			SlippagePct:   0,
+			MaxSizePct:    maxSize,
+			AdjConfidence: adjConfidence,
+			SpreadPct:     0,
+			VolatilityPct: 0,
+		}
+	}
+
 	// 1. Confidence check
 	if confidence < rg.cfg.MinConfidence {
 		approved = false

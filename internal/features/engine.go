@@ -37,6 +37,10 @@ func NewFeatureEngine(st *tracker.StateTracker) *FeatureEngine {
 
 // Compute calculates all features for a given pair
 func (fe *FeatureEngine) Compute(ctx context.Context, pair string) (*PairFeatures, bool, error) {
+	if fe.tracker == nil {
+		return nil, false, nil
+	}
+
 	current, hasCurrent, err := fe.tracker.GetLastTick(ctx, pair)
 	if err != nil {
 		return nil, false, err

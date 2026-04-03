@@ -54,9 +54,13 @@ func NewPipeline(
 // ProcessTick ingests a raw tick, updates state, and runs the pipeline
 func (p *Pipeline) ProcessTick(ctx context.Context, pair string, bid, bidVol, ask, askVol, last, volume float64) {
 	// Stage 0: Ingest — store tick in Redis
-	if err := p.tracker.PushTick(ctx, pair, bid, bidVol, ask, askVol, last, volume); err != nil {
-		log.Error().Err(err).Str("pair", pair).Msg("Pipeline: failed to push tick to Redis")
-		return
+	if p.tracker != nil {
+		if err := p.tracker.PushTick(ctx, pair, bid, bidVol, ask, askVol, last, volume); err != nil {
+			log.Error().Err(err).Str("pair", pair).Msg("Pipeline: failed to push tick to Redis")
+			return
+		}
+	} else {
+		log.Debug().Str("pair", pair).Msg("Pipeline: skipping tick ingest — no state tracker")
 	}
 
 	// Stage 1: Feature Engineering
@@ -158,19 +162,21 @@ func (p *Pipeline) GetPipelineStatus(ctx context.Context, pairs []string) map[st
 	for _, pair := range pairs {
 		entry := make(map[string]interface{})
 
-		tickLen, err := p.tracker.WindowLen(ctx, pair)
-		if err == nil {
-			entry["ticks_in_window"] = tickLen
+		if p.tracker != nil {
+			tickLen, err := p.tracker.WindowLen(ctx, pair)
+			if err == nil {
+				entry["ticks_in_window"] = tickLen
+			}
+
+			sma, _, _ := p.tracker.SMA(ctx, pair)
+			entry["sma"] = sma
+
+			vol, _, _ := p.tracker.Volatility(ctx, pair)
+			entry["volatility"] = vol
+
+			changePct, _, _ := p.tracker.PriceChangePct(ctx, pair)
+			entry["price_change_pct"] = changePct
 		}
-
-		sma, _, _ := p.tracker.SMA(ctx, pair)
-		entry["sma"] = sma
-
-		vol, _, _ := p.tracker.Volatility(ctx, pair)
-		entry["volatility"] = vol
-
-		changePct, _, _ := p.tracker.PriceChangePct(ctx, pair)
-		entry["price_change_pct"] = changePct
 
 		if feat, ok, _ := p.features.Compute(ctx, pair); ok {
 			entry["features"] = feat
@@ -188,6 +194,10 @@ func (p *Pipeline) GetPipelineStatus(ctx context.Context, pairs []string) map[st
 
 // RecordTrade logs a completed trade for drawdown tracking
 func (p *Pipeline) RecordTrade(ctx context.Context, pair, action string, price, sizePct, pnl float64) {
+	if p.tracker == nil {
+		log.Warn().Str("pair", pair).Msg("Pipeline: cannot record trade — no state tracker")
+		return
+	}
 	if err := p.tracker.RecordTrade(ctx, tracker.TradeRecord{
 		Pair:    pair,
 		Action:  action,
@@ -201,12 +211,18 @@ func (p *Pipeline) RecordTrade(ctx context.Context, pair, action string, price, 
 
 // GetTotalPnL returns the cumulative PnL of all recorded trades
 func (p *Pipeline) GetTotalPnL(ctx context.Context) float64 {
+	if p.tracker == nil {
+		return 0
+	}
 	total, _ := p.tracker.TotalPnL(ctx)
 	return total
 }
 
 // GetTradeCount returns the number of recorded trades
 func (p *Pipeline) GetTradeCount(ctx context.Context) int {
+	if p.tracker == nil {
+		return 0
+	}
 	count, _ := p.tracker.TradeCount(ctx)
 	return int(count)
 }
