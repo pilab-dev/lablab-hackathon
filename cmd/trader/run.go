@@ -37,7 +37,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 	}
 
 	log.Info().Msg("Starting Kraken Trader...")
-	log.Info().Str("mode", cfg.TradingMode).Strs("pairs", cfg.TradePairs).Msg("Configuration loaded")
+	log.Info().Str("mode", cfg.TradingMode).Msg("Configuration loaded")
 
 	// ── Context with Graceful Shutdown ──────────────────────────────
 	ctx, cancel := context.WithCancel(context.Background())
@@ -128,7 +128,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 	// ── Start Data Pipelines ───────────────────────────────────────
 
 	// Market Data Collector (WebSocket via kraken CLI)
-	collector := market.NewCollector(krakenClient, dbClient, stateMgr, natsClient, promptRepo, cfg.TradePairs)
+	collector := market.NewCollector(krakenClient, dbClient, stateMgr, natsClient, promptRepo)
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -137,7 +137,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 
 	// HTTP API Server for subscription management
 	router := gin.Default()
-	apiServer := api.NewServer(collector, engine)
+	apiServer := api.NewServer(collector, engine, krakenClient)
 	api.RegisterHandlersWithOptions(router, apiServer, api.GinServerOptions{})
 
 	// Serve embedded OpenAPI spec and Swagger UI
@@ -190,7 +190,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		pollSignals(ctx, prismClient, stateMgr, cfg.TradePairs)
+		pollSignals(ctx, prismClient, stateMgr, promptRepo)
 	}()
 
 	// Balance Polling (every 30s)
@@ -247,24 +247,34 @@ func runRun(cmd *cobra.Command, args []string) error {
 }
 
 // pollSignals periodically fetches PRISM technical signals and stores them in memory
-func pollSignals(ctx context.Context, prism *news.PrismClient, stateMgr *state.MemoryManager, pairs []string) {
+func pollSignals(ctx context.Context, prism *news.PrismClient, stateMgr *state.MemoryManager, repo repository.Repository) {
 	ticker := time.NewTicker(60 * time.Second)
 	defer ticker.Stop()
 
 	// Initial fetch
-	fetchAndStoreSignals(ctx, prism, stateMgr, pairs)
+	fetchAndStoreSignals(ctx, prism, stateMgr, repo)
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			fetchAndStoreSignals(ctx, prism, stateMgr, pairs)
+			fetchAndStoreSignals(ctx, prism, stateMgr, repo)
 		}
 	}
 }
 
-func fetchAndStoreSignals(ctx context.Context, prism *news.PrismClient, stateMgr *state.MemoryManager, pairs []string) {
+func fetchAndStoreSignals(ctx context.Context, prism *news.PrismClient, stateMgr *state.MemoryManager, repo repository.Repository) {
+	subs, err := repo.GetActiveSubscriptions(ctx)
+	if err != nil || len(subs) == 0 {
+		log.Debug().Err(err).Msg("No subscriptions found for signal polling")
+		return
+	}
+
+	pairs := make([]string, len(subs))
+	for i, s := range subs {
+		pairs[i] = s.Symbol
+	}
 	// Extract base symbols by trimming common quote currencies
 	symbols := make([]string, len(pairs))
 	for i, p := range pairs {

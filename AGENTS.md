@@ -54,6 +54,16 @@ make lint            # Run golangci-lint
 make fmt            # Format code (go fmt)
 make vet            # Run go vet
 make check          # Run fmt, vet, lint
+make generate       # Generate API code from OpenAPI spec (uses //go:generate)
+```
+
+### Generating API Code
+
+API definitions are in `internal/market/api.yaml`. After editing the spec:
+```bash
+go generate ./internal/api     # Regenerate from //go:generate directive
+# or
+make generate                  # Via Makefile
 ```
 
 ### Docker Services

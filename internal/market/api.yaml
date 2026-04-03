@@ -1,0 +1,295 @@
+openapi: 3.0.3
+info:
+  title: Kraken Trader API
+  version: 1.0.0
+  description: API for managing market data subscriptions and prompts
+servers:
+  - url: http://localhost:8081
+    description: Local development server
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      operationId: getHealth
+      tags:
+        - System
+      responses:
+        '200':
+          description: Health check response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+
+  /subscriptions:
+    get:
+      summary: List active subscriptions
+      operationId: listSubscriptions
+      tags:
+        - Subscriptions
+      responses:
+        '200':
+          description: List of active subscriptions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  subscriptions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SubscriptionDetail'
+                  count:
+                    type: integer
+
+    post:
+      summary: Add a new subscription
+      operationId: addSubscription
+      tags:
+        - Subscriptions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - symbol
+              properties:
+                symbol:
+                  type: string
+                  example: BTC/USD
+      responses:
+        '200':
+          description: Subscription added
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  symbol:
+                    type: string
+        '400':
+          description: Bad request
+        '409':
+          description: Already subscribed
+
+  /subscriptions/{symbol}:
+    delete:
+      summary: Remove a subscription
+      operationId: removeSubscription
+      tags:
+        - Subscriptions
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Subscription removed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  symbol:
+                    type: string
+        '404':
+          description: Not found
+
+  /subscriptions/detail:
+    get:
+      summary: List subscriptions with detail
+      operationId: listSubscriptionsDetail
+      tags:
+        - Subscriptions
+      responses:
+        '200':
+          description: List of subscriptions with timestamps
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  subscriptions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SubscriptionDetail'
+                  count:
+                    type: integer
+
+  /prompts:
+    get:
+      summary: List recent prompts
+      operationId: listPrompts
+      tags:
+        - Prompts
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: List of prompts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  prompts:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PromptRecord'
+                  count:
+                    type: integer
+
+  /loglevel:
+    get:
+      summary: Get current log level
+      operationId: getLogLevel
+      tags:
+        - System
+      responses:
+        '200':
+          description: Current log level
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  level:
+                    type: string
+                    enum: [trace, debug, info, warn, error]
+
+    post:
+      summary: Set console log level
+      operationId: setLogLevel
+      tags:
+        - System
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - level
+              properties:
+                level:
+                  type: string
+                  enum: [trace, debug, info, warn, error]
+      responses:
+        '200':
+          description: Log level updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  level:
+                    type: string
+        '400':
+          description: Invalid log level
+
+  /assets:
+    get:
+      summary: Get tradable assets
+      operationId: getAssets
+      tags:
+        - Market
+      parameters:
+        - name: enabled_only
+          in: query
+          schema:
+            type: boolean
+            default: true
+      responses:
+        '200':
+          description: List of tradable assets
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  assets:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AssetInfo'
+                  count:
+                    type: integer
+
+components:
+  schemas:
+    AssetInfo:
+      type: object
+      properties:
+        aclass:
+          type: string
+        altname:
+          type: string
+        decimals:
+          type: integer
+        display_decimals:
+          type: integer
+        status:
+          type: string
+        margin_rate:
+          type: string
+        collateral_value:
+          type: number
+
+    SubscriptionDetail:
+      type: object
+      properties:
+        symbol:
+          type: string
+        is_active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        last_data:
+          type: string
+          format: date-time
+
+    PromptRecord:
+      type: object
+      properties:
+        id:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        type:
+          type: string
+        pair:
+          type: string
+        raw_prompt:
+          type: string
+        raw_answer:
+          type: string
+        answer:
+          type: string
+        action:
+          type: string
+        size_pct:
+          type: number
+        confidence:
+          type: number
+        success:
+          type: boolean

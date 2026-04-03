@@ -1,4 +1,4 @@
-.PHONY: help setup docker-up docker-down test run clean
+.PHONY: help setup docker-up docker-down test run clean generate
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -6,6 +6,9 @@ help: ## Show this help
 setup: ## Initialize Go module and download dependencies
 	go mod init kraken-trader
 	go mod tidy
+
+generate: ## Generate API code from OpenAPI spec
+	oapi-codegen -package api -generate gin,server api.yaml > internal/api/generated.go
 
 docker-up: ## Start Docker services (InfluxDB, ChromaDB)
 	docker compose -f configs/docker-compose.yml up -d

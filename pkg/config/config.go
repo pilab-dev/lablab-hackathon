@@ -2,7 +2,6 @@ package config
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/spf13/viper"
@@ -16,7 +15,6 @@ type Config struct {
 
 	// Trading Configuration
 	TradingMode         string        `mapstructure:"TRADING_MODE"`
-	TradePairs          []string      `mapstructure:"TRADE_PAIRS"`
 	TradeInterval       time.Duration `mapstructure:"TRADE_INTERVAL"`
 	ConfidenceThreshold float64       `mapstructure:"CONFIDENCE_THRESHOLD"`
 	TradeCooldown       time.Duration `mapstructure:"TRADE_COOLDOWN"`
@@ -44,6 +42,9 @@ type Config struct {
 
 	// HTTP API Server
 	APIPort int `mapstructure:"API_PORT"`
+
+	// SQLite Database
+	SQLitePath string `mapstructure:"SQLITE_PATH"`
 
 	// Logging
 	LogLevel string `mapstructure:"LOG_LEVEL"`
@@ -75,21 +76,12 @@ func LoadConfig(configPath string) (*Config, error) {
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
-	// Parse comma-separated strings
-	if tradePairsStr := v.GetString("TRADE_PAIRS"); tradePairsStr != "" {
-		cfg.TradePairs = strings.Split(tradePairsStr, ",")
-		for i, pair := range cfg.TradePairs {
-			cfg.TradePairs[i] = strings.TrimSpace(pair)
-		}
-	}
-
 	return &cfg, nil
 }
 
 // setDefaults sets default values for configuration
 func setDefaults(v *viper.Viper) {
 	v.SetDefault("TRADING_MODE", "paper")
-	v.SetDefault("TRADE_PAIRS", []string{"BTCUSD", "ETHUSD"})
 	v.SetDefault("TRADE_INTERVAL", "30s")
 	v.SetDefault("CONFIDENCE_THRESHOLD", 0.6)
 	v.SetDefault("TRADE_COOLDOWN", "60s")
@@ -105,5 +97,6 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("NATS_URL", "nats://localhost:4222")
 	v.SetDefault("DASHBOARD_PORT", 8080)
 	v.SetDefault("API_PORT", 8081)
+	v.SetDefault("SQLITE_PATH", "./trader.db")
 	v.SetDefault("LOG_LEVEL", "info")
 }

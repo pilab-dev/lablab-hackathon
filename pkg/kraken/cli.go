@@ -132,3 +132,21 @@ func (c *Client) GetBalance(ctx context.Context) (map[string]float64, error) {
 
 	return resp.Result, nil
 }
+
+type AssetsResponse struct {
+	Error  interface{}                       `json:"error"`
+	Result map[string]map[string]interface{} `json:"result,omitempty"`
+}
+
+func (c *Client) GetAssets(ctx context.Context) (map[string]map[string]interface{}, error) {
+	var resp AssetsResponse
+	if err := c.Run(ctx, &resp, "assets"); err != nil {
+		return nil, err
+	}
+
+	if resp.Error != nil {
+		return nil, fmt.Errorf("assets error: %v", resp.Error)
+	}
+
+	return resp.Result, nil
+}
