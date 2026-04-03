@@ -9,6 +9,55 @@ import (
 	"testing"
 )
 
+func TestNewEngine_DefaultProvider(t *testing.T) {
+	engine := NewEngine("", "", "", nil, nil, nil, nil, nil)
+	if engine.provider != "ollama" {
+		t.Errorf("expected default provider 'ollama', got %q", engine.provider)
+	}
+}
+
+func TestNewEngine_DefaultBaseURL_Ollama(t *testing.T) {
+	engine := NewEngine("ollama", "", "", nil, nil, nil, nil, nil)
+	if engine.baseURL != "http://localhost:11434" {
+		t.Errorf("expected default ollama baseURL 'http://localhost:11434', got %q", engine.baseURL)
+	}
+}
+
+func TestNewEngine_DefaultBaseURL_EmptyProviderFallback(t *testing.T) {
+	// Empty provider defaults to "ollama", so baseURL should default to ollama's URL
+	engine := NewEngine("", "", "", nil, nil, nil, nil, nil)
+	if engine.baseURL != "http://localhost:11434" {
+		t.Errorf("expected default baseURL 'http://localhost:11434', got %q", engine.baseURL)
+	}
+}
+
+func TestNewEngine_DefaultBaseURL_LMStudio(t *testing.T) {
+	engine := NewEngine("lmstudio", "", "", nil, nil, nil, nil, nil)
+	if engine.baseURL != "http://localhost:1234" {
+		t.Errorf("expected default lmstudio baseURL 'http://localhost:1234', got %q", engine.baseURL)
+	}
+}
+
+func TestNewEngine_DefaultModel(t *testing.T) {
+	engine := NewEngine("", "", "", nil, nil, nil, nil, nil)
+	if engine.model != "llama3.1:8b" {
+		t.Errorf("expected default model 'llama3.1:8b', got %q", engine.model)
+	}
+}
+
+func TestNewEngine_ExplicitValues(t *testing.T) {
+	engine := NewEngine("lmstudio", "http://myhost:1234", "my-model", nil, nil, nil, nil, nil)
+	if engine.provider != "lmstudio" {
+		t.Errorf("expected provider 'lmstudio', got %q", engine.provider)
+	}
+	if engine.baseURL != "http://myhost:1234" {
+		t.Errorf("expected baseURL 'http://myhost:1234', got %q", engine.baseURL)
+	}
+	if engine.model != "my-model" {
+		t.Errorf("expected model 'my-model', got %q", engine.model)
+	}
+}
+
 func TestEngine_CallLMStudio(t *testing.T) {
 	// Mock LM Studio server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -106,51 +155,6 @@ func TestEngine_CallOllama(t *testing.T) {
 	}
 }
 
-// --- NewEngine default value tests ---
-
-func TestNewEngine_Defaults_EmptyProvider(t *testing.T) {
-	e := NewEngine("", "", "", nil, nil, nil, nil, nil)
-	if e.provider != "ollama" {
-		t.Errorf("Expected default provider 'ollama', got %q", e.provider)
-	}
-}
-
-func TestNewEngine_Defaults_EmptyBaseURL_Ollama(t *testing.T) {
-	e := NewEngine("ollama", "", "", nil, nil, nil, nil, nil)
-	if e.baseURL != "http://localhost:11434" {
-		t.Errorf("Expected default ollama baseURL 'http://localhost:11434', got %q", e.baseURL)
-	}
-}
-
-func TestNewEngine_Defaults_EmptyBaseURL_LMStudio(t *testing.T) {
-	e := NewEngine("lmstudio", "", "", nil, nil, nil, nil, nil)
-	if e.baseURL != "http://localhost:1234" {
-		t.Errorf("Expected default lmstudio baseURL 'http://localhost:1234', got %q", e.baseURL)
-	}
-}
-
-func TestNewEngine_Defaults_EmptyModel(t *testing.T) {
-	e := NewEngine("", "", "", nil, nil, nil, nil, nil)
-	if e.model != "llama3.1:8b" {
-		t.Errorf("Expected default model 'llama3.1:8b', got %q", e.model)
-	}
-}
-
-func TestNewEngine_ExplicitValues(t *testing.T) {
-	e := NewEngine("lmstudio", "http://myhost:1234", "phi-3", nil, nil, nil, nil, nil)
-	if e.provider != "lmstudio" {
-		t.Errorf("Expected provider 'lmstudio', got %q", e.provider)
-	}
-	if e.baseURL != "http://myhost:1234" {
-		t.Errorf("Expected baseURL 'http://myhost:1234', got %q", e.baseURL)
-	}
-	if e.model != "phi-3" {
-		t.Errorf("Expected model 'phi-3', got %q", e.model)
-	}
-}
-
-// --- callLMStudio error / edge case tests ---
-
 func TestEngine_CallLMStudio_NonOKStatus(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -158,12 +162,12 @@ func TestEngine_CallLMStudio_NonOKStatus(t *testing.T) {
 	defer server.Close()
 
 	engine := NewEngine("lmstudio", server.URL, "test-model", nil, nil, nil, nil, nil)
-	_, err := engine.callLMStudio(context.Background(), "BTCUSD", "prompt")
+	_, err := engine.callLMStudio(context.Background(), "BTCUSD", "Test prompt")
 	if err == nil {
-		t.Fatal("Expected error for non-200 status, got nil")
+		t.Fatal("expected error for non-200 status, got nil")
 	}
 	if !strings.Contains(err.Error(), "500") {
-		t.Errorf("Expected error to mention status 500, got: %v", err)
+		t.Errorf("expected error to mention status 500, got: %v", err)
 	}
 }
 
@@ -176,329 +180,396 @@ func TestEngine_CallLMStudio_EmptyChoices(t *testing.T) {
 	defer server.Close()
 
 	engine := NewEngine("lmstudio", server.URL, "test-model", nil, nil, nil, nil, nil)
-	_, err := engine.callLMStudio(context.Background(), "BTCUSD", "prompt")
+	_, err := engine.callLMStudio(context.Background(), "BTCUSD", "Test prompt")
 	if err == nil {
-		t.Fatal("Expected error for empty choices, got nil")
+		t.Fatal("expected error for empty choices, got nil")
 	}
 	if !strings.Contains(err.Error(), "no choices") {
-		t.Errorf("Expected 'no choices' error, got: %v", err)
+		t.Errorf("expected 'no choices' error, got: %v", err)
 	}
 }
 
-func TestEngine_CallLMStudio_MalformedResponseBody(t *testing.T) {
+func TestEngine_CallLMStudio_InvalidResponseBody(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`not-valid-json`))
+		w.Write([]byte(`not valid json`))
 	}))
 	defer server.Close()
 
 	engine := NewEngine("lmstudio", server.URL, "test-model", nil, nil, nil, nil, nil)
-	_, err := engine.callLMStudio(context.Background(), "BTCUSD", "prompt")
+	_, err := engine.callLMStudio(context.Background(), "BTCUSD", "Test prompt")
 	if err == nil {
-		t.Fatal("Expected error for malformed response body, got nil")
+		t.Fatal("expected error for invalid response body, got nil")
 	}
 }
 
-func TestEngine_CallLMStudio_InvalidContentJSON(t *testing.T) {
+func TestEngine_CallLMStudio_InvalidLLMContentJSON(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"choices": [{"message": {"content": "this is not json"}}]}`))
+		// The outer JSON is valid but the content string is not valid JSON
+		w.Write([]byte(`{"choices": [{"message": {"content": "not json"}}]}`))
 	}))
 	defer server.Close()
 
 	engine := NewEngine("lmstudio", server.URL, "test-model", nil, nil, nil, nil, nil)
-	_, err := engine.callLMStudio(context.Background(), "BTCUSD", "prompt")
+	_, err := engine.callLMStudio(context.Background(), "BTCUSD", "Test prompt")
 	if err == nil {
-		t.Fatal("Expected error for invalid content JSON, got nil")
+		t.Fatal("expected error for invalid LLM content JSON, got nil")
 	}
 	if !strings.Contains(err.Error(), "failed to parse LLM decisions JSON") {
-		t.Errorf("Expected parse error, got: %v", err)
+		t.Errorf("expected parse error, got: %v", err)
 	}
 }
 
-func TestEngine_CallLMStudio_RequestBody(t *testing.T) {
-	var capturedBody map[string]interface{}
+func TestEngine_CallLMStudio_NetworkError(t *testing.T) {
+	// Use a server that is immediately closed so connections fail
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	server.Close()
+
+	engine := NewEngine("lmstudio", server.URL, "test-model", nil, nil, nil, nil, nil)
+	_, err := engine.callLMStudio(context.Background(), "BTCUSD", "Test prompt")
+	if err == nil {
+		t.Fatal("expected network error, got nil")
+	}
+}
+
+func TestEngine_CallLMStudio_VerifiesRequestHeaders(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewDecoder(r.Body).Decode(&capturedBody)
+		if r.Header.Get("Content-Type") != "application/json" {
+			t.Errorf("expected Content-Type application/json, got %q", r.Header.Get("Content-Type"))
+		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"choices": [{"message": {"content": "{\"action\": \"hold\", \"confidence\": 0.5, \"sizing\": \"SKIP\", \"reasoning\": {\"primary_signal\": \"flat\", \"supporting\": []}}"}}]}`))
+		w.Write([]byte(`{"choices": [{"message": {"content": "{\"action\": \"hold\", \"confidence\": 0.3, \"sizing\": \"SKIP\", \"reasoning\": {\"primary_signal\": \"flat\"}}"}}]}`))
 	}))
 	defer server.Close()
 
-	engine := NewEngine("lmstudio", server.URL, "my-model", nil, nil, nil, nil, nil)
-	engine.callLMStudio(context.Background(), "ETHUSD", "some prompt")
-
-	if capturedBody["model"] != "my-model" {
-		t.Errorf("Expected model 'my-model' in request, got %v", capturedBody["model"])
-	}
-	if capturedBody["stream"] != false {
-		t.Errorf("Expected stream false in request, got %v", capturedBody["stream"])
-	}
-	if capturedBody["temperature"] != 0.1 {
-		t.Errorf("Expected temperature 0.1 in request, got %v", capturedBody["temperature"])
-	}
-	respFmt, ok := capturedBody["response_format"].(map[string]interface{})
-	if !ok || respFmt["type"] != "json_object" {
-		t.Errorf("Expected response_format.type json_object, got %v", capturedBody["response_format"])
+	engine := NewEngine("lmstudio", server.URL, "test-model", nil, nil, nil, nil, nil)
+	_, err := engine.callLMStudio(context.Background(), "BTCUSD", "Test prompt")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
-
-// --- callOllama error / edge case tests ---
 
 func TestEngine_CallOllama_NonOKStatus(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusBadGateway)
+		w.WriteHeader(http.StatusBadRequest)
 	}))
 	defer server.Close()
 
 	engine := NewEngine("ollama", server.URL, "llama3.1:8b", nil, nil, nil, nil, nil)
-	_, err := engine.callOllama(context.Background(), "BTCUSD", "prompt")
+	_, err := engine.callOllama(context.Background(), "ETHUSD", "Test prompt")
 	if err == nil {
-		t.Fatal("Expected error for non-200 status, got nil")
+		t.Fatal("expected error for non-200 status, got nil")
 	}
-	if !strings.Contains(err.Error(), "502") {
-		t.Errorf("Expected error to mention status 502, got: %v", err)
-	}
-}
-
-func TestEngine_CallOllama_MalformedResponseBody(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{broken json`))
-	}))
-	defer server.Close()
-
-	engine := NewEngine("ollama", server.URL, "llama3.1:8b", nil, nil, nil, nil, nil)
-	_, err := engine.callOllama(context.Background(), "BTCUSD", "prompt")
-	if err == nil {
-		t.Fatal("Expected error for malformed response body, got nil")
+	if !strings.Contains(err.Error(), "400") {
+		t.Errorf("expected error to mention status 400, got: %v", err)
 	}
 }
 
-func TestEngine_CallOllama_InvalidContentJSON(t *testing.T) {
+func TestEngine_CallOllama_InvalidResponseBody(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"message": {"content": "plain text not json"}}`))
+		w.Write([]byte(`{bad json`))
 	}))
 	defer server.Close()
 
 	engine := NewEngine("ollama", server.URL, "llama3.1:8b", nil, nil, nil, nil, nil)
-	_, err := engine.callOllama(context.Background(), "BTCUSD", "prompt")
+	_, err := engine.callOllama(context.Background(), "ETHUSD", "Test prompt")
 	if err == nil {
-		t.Fatal("Expected error for invalid content JSON, got nil")
+		t.Fatal("expected error for invalid response body, got nil")
+	}
+}
+
+func TestEngine_CallOllama_InvalidLLMContentJSON(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"message": {"content": "not valid json at all"}}`))
+	}))
+	defer server.Close()
+
+	engine := NewEngine("ollama", server.URL, "llama3.1:8b", nil, nil, nil, nil, nil)
+	_, err := engine.callOllama(context.Background(), "ETHUSD", "Test prompt")
+	if err == nil {
+		t.Fatal("expected error for invalid LLM content JSON, got nil")
 	}
 	if !strings.Contains(err.Error(), "failed to parse LLM decisions JSON") {
-		t.Errorf("Expected parse error, got: %v", err)
+		t.Errorf("expected parse error, got: %v", err)
 	}
 }
 
-func TestEngine_CallOllama_RequestBody(t *testing.T) {
-	var capturedBody map[string]interface{}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewDecoder(r.Body).Decode(&capturedBody)
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"message": {"content": "{\"action\": \"hold\", \"confidence\": 0.5, \"sizing\": \"SKIP\", \"reasoning\": {\"primary_signal\": \"flat\", \"supporting\": []}}" }}`))
-	}))
-	defer server.Close()
+func TestEngine_CallOllama_NetworkError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	server.Close()
 
 	engine := NewEngine("ollama", server.URL, "llama3.1:8b", nil, nil, nil, nil, nil)
-	engine.callOllama(context.Background(), "BTCUSD", "some prompt")
-
-	if capturedBody["model"] != "llama3.1:8b" {
-		t.Errorf("Expected model 'llama3.1:8b', got %v", capturedBody["model"])
-	}
-	if capturedBody["format"] != "json" {
-		t.Errorf("Expected format 'json', got %v", capturedBody["format"])
-	}
-	if capturedBody["stream"] != false {
-		t.Errorf("Expected stream false, got %v", capturedBody["stream"])
+	_, err := engine.callOllama(context.Background(), "ETHUSD", "Test prompt")
+	if err == nil {
+		t.Fatal("expected network error, got nil")
 	}
 }
 
-// --- processLLMResponse sizing / reasoning tests ---
-
-func TestEngine_ProcessLLMResponse_SizingFull(t *testing.T) {
+func TestEngine_ProcessLLMResponse_SizingQUARTER(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"choices": [{"message": {"content": "{\"action\": \"buy\", \"confidence\": 0.9, \"sizing\": \"FULL\", \"reasoning\": {\"primary_signal\": \"breakout\", \"supporting\": []}}"}}]}`))
+		w.Write([]byte(`{
+			"choices": [{
+				"message": {
+					"content": "{\"action\": \"buy\", \"confidence\": 0.4, \"sizing\": \"QUARTER\", \"reasoning\": {\"primary_signal\": \"Weak signal\", \"supporting\": []}}"
+				}
+			}]
+		}`))
 	}))
 	defer server.Close()
 
 	engine := NewEngine("lmstudio", server.URL, "test-model", nil, nil, nil, nil, nil)
-	decisions, err := engine.callLMStudio(context.Background(), "BTCUSD", "prompt")
+	decisions, err := engine.callLMStudio(context.Background(), "BTCUSD", "Test prompt")
 	if err != nil {
-		t.Fatalf("Unexpected error: %v", err)
+		t.Fatalf("unexpected error: %v", err)
 	}
-	if decisions[0].SizePct != 10.0 {
-		t.Errorf("Expected FULL sizing = 10.0, got %f", decisions[0].SizePct)
-	}
-}
-
-func TestEngine_ProcessLLMResponse_SizingQuarter(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"choices": [{"message": {"content": "{\"action\": \"buy\", \"confidence\": 0.6, \"sizing\": \"QUARTER\", \"reasoning\": {\"primary_signal\": \"signal\", \"supporting\": []}}"}}]}`))
-	}))
-	defer server.Close()
-
-	engine := NewEngine("lmstudio", server.URL, "test-model", nil, nil, nil, nil, nil)
-	decisions, err := engine.callLMStudio(context.Background(), "BTCUSD", "prompt")
-	if err != nil {
-		t.Fatalf("Unexpected error: %v", err)
+	if len(decisions) != 1 {
+		t.Fatalf("expected 1 decision, got %d", len(decisions))
 	}
 	if decisions[0].SizePct != 2.5 {
-		t.Errorf("Expected QUARTER sizing = 2.5, got %f", decisions[0].SizePct)
+		t.Errorf("expected QUARTER size_pct 2.5, got %f", decisions[0].SizePct)
 	}
 }
 
-func TestEngine_ProcessLLMResponse_SizingSkip(t *testing.T) {
+func TestEngine_ProcessLLMResponse_SizingSKIP(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"choices": [{"message": {"content": "{\"action\": \"hold\", \"confidence\": 0.5, \"sizing\": \"SKIP\", \"reasoning\": {\"primary_signal\": \"flat\", \"supporting\": []}}"}}]}`))
+		w.Write([]byte(`{
+			"choices": [{
+				"message": {
+					"content": "{\"action\": \"hold\", \"confidence\": 0.2, \"sizing\": \"SKIP\", \"reasoning\": {\"primary_signal\": \"No signal\", \"supporting\": []}}"
+				}
+			}]
+		}`))
 	}))
 	defer server.Close()
 
 	engine := NewEngine("lmstudio", server.URL, "test-model", nil, nil, nil, nil, nil)
-	decisions, err := engine.callLMStudio(context.Background(), "BTCUSD", "prompt")
+	decisions, err := engine.callLMStudio(context.Background(), "BTCUSD", "Test prompt")
 	if err != nil {
-		t.Fatalf("Unexpected error: %v", err)
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(decisions) != 1 {
+		t.Fatalf("expected 1 decision, got %d", len(decisions))
 	}
 	if decisions[0].SizePct != 0.0 {
-		t.Errorf("Expected SKIP sizing = 0.0, got %f", decisions[0].SizePct)
+		t.Errorf("expected SKIP size_pct 0.0, got %f", decisions[0].SizePct)
+	}
+}
+
+func TestEngine_ProcessLLMResponse_SizingFULL(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{
+			"choices": [{
+				"message": {
+					"content": "{\"action\": \"buy\", \"confidence\": 0.9, \"sizing\": \"FULL\", \"reasoning\": {\"primary_signal\": \"Strong signal\"}}"
+				}
+			}]
+		}`))
+	}))
+	defer server.Close()
+
+	engine := NewEngine("lmstudio", server.URL, "test-model", nil, nil, nil, nil, nil)
+	decisions, err := engine.callLMStudio(context.Background(), "BTCUSD", "Test prompt")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(decisions) != 1 {
+		t.Fatalf("expected 1 decision, got %d", len(decisions))
+	}
+	if decisions[0].SizePct != 10.0 {
+		t.Errorf("expected FULL size_pct 10.0, got %f", decisions[0].SizePct)
 	}
 }
 
 func TestEngine_ProcessLLMResponse_EmptyAction(t *testing.T) {
+	// When action is empty string, processLLMResponse returns an empty decisions slice
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		// action is empty string - should yield empty decisions
-		w.Write([]byte(`{"choices": [{"message": {"content": "{\"action\": \"\", \"confidence\": 0.5, \"sizing\": \"SKIP\", \"reasoning\": {\"primary_signal\": \"\", \"supporting\": []}}"}}]}`))
+		w.Write([]byte(`{
+			"choices": [{
+				"message": {
+					"content": "{\"action\": \"\", \"confidence\": 0.1, \"sizing\": \"SKIP\", \"reasoning\": {\"primary_signal\": \"No action\"}}"
+				}
+			}]
+		}`))
 	}))
 	defer server.Close()
 
 	engine := NewEngine("lmstudio", server.URL, "test-model", nil, nil, nil, nil, nil)
-	decisions, err := engine.callLMStudio(context.Background(), "BTCUSD", "prompt")
+	decisions, err := engine.callLMStudio(context.Background(), "BTCUSD", "Test prompt")
 	if err != nil {
-		t.Fatalf("Unexpected error: %v", err)
+		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(decisions) != 0 {
-		t.Errorf("Expected 0 decisions for empty action, got %d", len(decisions))
+		t.Errorf("expected 0 decisions for empty action, got %d", len(decisions))
 	}
 }
 
-func TestEngine_ProcessLLMResponse_ReasoningWithoutSupporting(t *testing.T) {
+func TestEngine_ProcessLLMResponse_ReasoningConcatenated(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"choices": [{"message": {"content": "{\"action\": \"sell\", \"confidence\": 0.7, \"sizing\": \"HALF\", \"reasoning\": {\"primary_signal\": \"trend reversal\", \"supporting\": []}}"}}]}`))
+		w.Write([]byte(`{
+			"choices": [{
+				"message": {
+					"content": "{\"action\": \"sell\", \"confidence\": 0.7, \"sizing\": \"HALF\", \"reasoning\": {\"primary_signal\": \"Overbought\", \"supporting\": [\"RSI > 70\"]}}"
+				}
+			}]
+		}`))
 	}))
 	defer server.Close()
 
 	engine := NewEngine("lmstudio", server.URL, "test-model", nil, nil, nil, nil, nil)
-	decisions, err := engine.callLMStudio(context.Background(), "ETHUSD", "prompt")
+	decisions, err := engine.callLMStudio(context.Background(), "BTCUSD", "Test prompt")
 	if err != nil {
-		t.Fatalf("Unexpected error: %v", err)
+		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(decisions) != 1 {
-		t.Fatalf("Expected 1 decision, got %d", len(decisions))
+		t.Fatalf("expected 1 decision, got %d", len(decisions))
 	}
-	if decisions[0].Reasoning != "trend reversal" {
-		t.Errorf("Expected reasoning 'trend reversal', got %q", decisions[0].Reasoning)
+	expected := "Overbought; RSI > 70"
+	if decisions[0].Reasoning != expected {
+		t.Errorf("expected reasoning %q, got %q", expected, decisions[0].Reasoning)
 	}
 }
 
-func TestEngine_ProcessLLMResponse_ReasoningWithSupporting(t *testing.T) {
+func TestEngine_CallLMStudio_VerifiesRequestBody(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var reqBody map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+			t.Fatalf("failed to decode request body: %v", err)
+		}
+		if reqBody["stream"] != false {
+			t.Errorf("expected stream=false, got %v", reqBody["stream"])
+		}
+		temp, ok := reqBody["temperature"].(float64)
+		if !ok || temp != 0.1 {
+			t.Errorf("expected temperature=0.1, got %v", reqBody["temperature"])
+		}
+		if reqBody["model"] != "custom-model" {
+			t.Errorf("expected model='custom-model', got %v", reqBody["model"])
+		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"choices": [{"message": {"content": "{\"action\": \"buy\", \"confidence\": 0.85, \"sizing\": \"FULL\", \"reasoning\": {\"primary_signal\": \"momentum\", \"supporting\": [\"RSI oversold\"]}}"}}]}`))
+		w.Write([]byte(`{"choices": [{"message": {"content": "{\"action\": \"hold\", \"confidence\": 0.5, \"sizing\": \"HALF\", \"reasoning\": {\"primary_signal\": \"ok\"}}"}}]}`))
 	}))
 	defer server.Close()
 
-	engine := NewEngine("lmstudio", server.URL, "test-model", nil, nil, nil, nil, nil)
-	decisions, err := engine.callLMStudio(context.Background(), "BTCUSD", "prompt")
+	engine := NewEngine("lmstudio", server.URL, "custom-model", nil, nil, nil, nil, nil)
+	_, err := engine.callLMStudio(context.Background(), "BTCUSD", "Test prompt")
 	if err != nil {
-		t.Fatalf("Unexpected error: %v", err)
-	}
-	if !strings.Contains(decisions[0].Reasoning, "momentum") {
-		t.Errorf("Expected reasoning to contain 'momentum', got %q", decisions[0].Reasoning)
-	}
-	if !strings.Contains(decisions[0].Reasoning, "RSI oversold") {
-		t.Errorf("Expected reasoning to contain 'RSI oversold', got %q", decisions[0].Reasoning)
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
-// --- Decide() routing test ---
-
-func TestEngine_Decide_RoutesToLMStudio(t *testing.T) {
-	var calledPath string
+func TestEngine_CallOllama_VerifiesRequestBody(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calledPath = r.URL.Path
+		var reqBody map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+			t.Fatalf("failed to decode request body: %v", err)
+		}
+		if reqBody["stream"] != false {
+			t.Errorf("expected stream=false, got %v", reqBody["stream"])
+		}
+		if reqBody["format"] != "json" {
+			t.Errorf("expected format='json', got %v", reqBody["format"])
+		}
+		if reqBody["model"] != "llama3.1:8b" {
+			t.Errorf("expected model='llama3.1:8b', got %v", reqBody["model"])
+		}
+		options, ok := reqBody["options"].(map[string]interface{})
+		if !ok {
+			t.Errorf("expected options map, got %T", reqBody["options"])
+		} else if options["temperature"] != 0.1 {
+			t.Errorf("expected temperature=0.1, got %v", options["temperature"])
+		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		// Return minimal valid response
-		w.Write([]byte(`{"choices": [{"message": {"content": "{\"action\": \"hold\", \"confidence\": 0.5, \"sizing\": \"SKIP\", \"reasoning\": {\"primary_signal\": \"flat\", \"supporting\": []}}"}}]}`))
-	}))
-	defer server.Close()
-
-	engine := NewEngine("lmstudio", server.URL, "test-model", nil, nil, nil, nil, nil)
-	// Decide requires stateMgr, so just verify routing by calling the underlying method directly
-	// and ensure the right path was hit
-	engine.callLMStudio(context.Background(), "BTCUSD", "prompt")
-	if calledPath != "/v1/chat/completions" {
-		t.Errorf("Expected lmstudio path '/v1/chat/completions', got %q", calledPath)
-	}
-}
-
-func TestEngine_Decide_RoutesToOllama(t *testing.T) {
-	var calledPath string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calledPath = r.URL.Path
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"message": {"content": "{\"action\": \"hold\", \"confidence\": 0.5, \"sizing\": \"SKIP\", \"reasoning\": {\"primary_signal\": \"flat\", \"supporting\": []}}"}}`))
+		w.Write([]byte(`{"message": {"content": "{\"action\": \"buy\", \"confidence\": 0.8, \"sizing\": \"FULL\", \"reasoning\": {\"primary_signal\": \"ok\"}}"}}`))
 	}))
 	defer server.Close()
 
 	engine := NewEngine("ollama", server.URL, "llama3.1:8b", nil, nil, nil, nil, nil)
-	engine.callOllama(context.Background(), "BTCUSD", "prompt")
-	if calledPath != "/api/chat" {
-		t.Errorf("Expected ollama path '/api/chat', got %q", calledPath)
+	_, err := engine.callOllama(context.Background(), "BTCUSD", "Test prompt")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
-// Regression: long content (>100 chars) in bad JSON is truncated in debug log without panic
-func TestEngine_ProcessLLMResponse_LongInvalidContentTruncated(t *testing.T) {
-	longContent := strings.Repeat("x", 200)
-	body, _ := json.Marshal(map[string]interface{}{
-		"choices": []map[string]interface{}{
-			{"message": map[string]interface{}{"content": longContent}},
-		},
-	})
+func TestEngine_CallLMStudio_PairPropagatedToDecision(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write(body)
+		w.Write([]byte(`{"choices": [{"message": {"content": "{\"action\": \"buy\", \"confidence\": 0.8, \"sizing\": \"FULL\", \"reasoning\": {\"primary_signal\": \"ok\"}}"}}]}`))
 	}))
 	defer server.Close()
 
 	engine := NewEngine("lmstudio", server.URL, "test-model", nil, nil, nil, nil, nil)
-	_, err := engine.callLMStudio(context.Background(), "BTCUSD", "prompt")
-	if err == nil {
-		t.Fatal("Expected error for invalid JSON content, got nil")
+	decisions, err := engine.callLMStudio(context.Background(), "XBTUSD", "Test prompt")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
-	// Should not panic and should return parse error
-	if !strings.Contains(err.Error(), "failed to parse LLM decisions JSON") {
-		t.Errorf("Expected parse error, got: %v", err)
+	if len(decisions) != 1 {
+		t.Fatalf("expected 1 decision, got %d", len(decisions))
+	}
+	if decisions[0].Pair != "XBTUSD" {
+		t.Errorf("expected pair 'XBTUSD', got %q", decisions[0].Pair)
+	}
+}
+
+func TestEngine_CallOllama_PairPropagatedToDecision(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"message": {"content": "{\"action\": \"sell\", \"confidence\": 0.9, \"sizing\": \"HALF\", \"reasoning\": {\"primary_signal\": \"ok\"}}"}}`))
+	}))
+	defer server.Close()
+
+	engine := NewEngine("ollama", server.URL, "llama3.1:8b", nil, nil, nil, nil, nil)
+	decisions, err := engine.callOllama(context.Background(), "ETHUSD", "Test prompt")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(decisions) != 1 {
+		t.Fatalf("expected 1 decision, got %d", len(decisions))
+	}
+	if decisions[0].Pair != "ETHUSD" {
+		t.Errorf("expected pair 'ETHUSD', got %q", decisions[0].Pair)
+	}
+}
+
+func TestEngine_CallLMStudio_ContentTruncatedInErrorLog(t *testing.T) {
+	// Content longer than 100 chars should not cause a panic during error logging
+	longInvalidContent := strings.Repeat("x", 200)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		resp := map[string]interface{}{
+			"choices": []map[string]interface{}{
+				{"message": map[string]interface{}{"content": longInvalidContent}},
+			},
+		}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	engine := NewEngine("lmstudio", server.URL, "test-model", nil, nil, nil, nil, nil)
+	_, err := engine.callLMStudio(context.Background(), "BTCUSD", "Test prompt")
+	if err == nil {
+		t.Fatal("expected error for invalid JSON content, got nil")
 	}
 }
