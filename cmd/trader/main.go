@@ -18,5 +18,7 @@ func init() {
 }
 
 func main() {
-	Execute()
+	if err := Execute(); err != nil {
+		log.Fatal().Err(err).Msg("trader exited with error")
+	}
 }

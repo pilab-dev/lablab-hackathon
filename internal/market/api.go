@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
 )
 
@@ -30,6 +31,25 @@ func (s *Server) routes() {
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.mux.ServeHTTP(w, r)
+}
+
+// RegisterGin mounts the same REST routes as ServeHTTP on a Gin engine.
+// Gin does not populate http.Request.PathValue; DELETE uses a cloned request with SetPathValue.
+func (s *Server) RegisterGin(r *gin.Engine) {
+	r.GET("/health", func(c *gin.Context) {
+		s.handleHealth(c.Writer, c.Request)
+	})
+	r.GET("/subscriptions", func(c *gin.Context) {
+		s.handleListSubscriptions(c.Writer, c.Request)
+	})
+	r.POST("/subscriptions", func(c *gin.Context) {
+		s.handleAddSubscription(c.Writer, c.Request)
+	})
+	r.DELETE("/subscriptions/:symbol", func(c *gin.Context) {
+		req := c.Request.Clone(c.Request.Context())
+		req.SetPathValue("symbol", c.Param("symbol"))
+		s.handleRemoveSubscription(c.Writer, req)
+	})
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {

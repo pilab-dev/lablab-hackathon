@@ -79,7 +79,7 @@ make run-with-env
 
 Or for development with auto-reload:
 ```bash
-go run cmd/trader/main.go
+go run ./cmd/trader
 ```
 
 ---
@@ -87,7 +87,7 @@ go run cmd/trader/main.go
 ## Quick Start (Dev)
 1.  **Prerequisites:** Go 1.26+, Docker, Ollama (llama3.1:8b), Kraken CLI.
 2.  **Setup:** `cp .env.example .env` and fill in your keys.
-3.  **Run:** `make docker-up` then `go run cmd/trader/main.go`.
+3.  **Run:** `make docker-up` then `go run ./cmd/trader`.
 
 ---
 

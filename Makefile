@@ -30,10 +30,10 @@ test-integration: ## Run integration tests (requires Docker services)
 	go test -v -race -tags=integration ./...
 
 run: ## Run the trader bot
-	go run cmd/trader/main.go
+	go run ./cmd/trader
 
 run-with-env: ## Run the trader bot with .env file
-	set -a && . .env && set +a && go run cmd/trader/main.go
+	set -a && . .env && set +a && go run ./cmd/trader
 
 build: ## Build the binary
 	go build -o bin/kraken-trader ./cmd/trader

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"kraken-trader/internal/messaging"
+	"kraken-trader/internal/repository"
 	"kraken-trader/internal/state"
 	"kraken-trader/internal/storage"
 	"kraken-trader/pkg/kraken"
@@ -60,18 +61,20 @@ type WSSubscribeResponse struct {
 
 // Collector manages the polling of market data from Kraken
 type Collector struct {
-	cli   *kraken.Client
-	db    *storage.Client
-	state *state.MemoryManager
-	nats  *messaging.NATSClient
-	pairs []string
+	cli     *kraken.Client
+	db      *storage.Client
+	state   *state.MemoryManager
+	nats    *messaging.NATSClient
+	prompts repository.PromptRepository
+	pairs   []string
 
 	subscriptions map[string]bool
 	subsMu        sync.RWMutex
 }
 
-// NewCollector initializes a new market data collector using WebSockets
-func NewCollector(cli *kraken.Client, db *storage.Client, stateMgr *state.MemoryManager, natsClient *messaging.NATSClient, pairs []string) *Collector {
+// NewCollector initializes a new market data collector using WebSockets.
+// prompts is optional (may be nil); reserved for future correlation with LLM logs.
+func NewCollector(cli *kraken.Client, db *storage.Client, stateMgr *state.MemoryManager, natsClient *messaging.NATSClient, prompts repository.PromptRepository, pairs []string) *Collector {
 	// Format pairs for the WebSocket (e.g., BTC/USD instead of BTCUSD)
 	wsPairs := make([]string, len(pairs))
 	for i, p := range pairs {
@@ -87,6 +90,7 @@ func NewCollector(cli *kraken.Client, db *storage.Client, stateMgr *state.Memory
 		db:            db,
 		state:         stateMgr,
 		nats:          natsClient,
+		prompts:       prompts,
 		pairs:         wsPairs,
 		subscriptions: make(map[string]bool),
 	}

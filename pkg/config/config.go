@@ -45,6 +45,9 @@ type Config struct {
 	// HTTP API Server
 	APIPort int `mapstructure:"API_PORT"`
 
+	// SQLite (optional LLM prompt audit log)
+	SQLitePath string `mapstructure:"SQLITE_PATH"`
+
 	// Logging
 	LogLevel string `mapstructure:"LOG_LEVEL"`
 
@@ -105,5 +108,6 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("NATS_URL", "nats://localhost:4222")
 	v.SetDefault("DASHBOARD_PORT", 8080)
 	v.SetDefault("API_PORT", 8081)
+	v.SetDefault("SQLITE_PATH", "")
 	v.SetDefault("LOG_LEVEL", "info")
 }

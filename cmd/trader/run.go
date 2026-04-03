@@ -107,11 +107,16 @@ func runRun(cmd *cobra.Command, args []string) error {
 	embedder := news.NewEmbedder(cfg.OllamaURL, cfg.OllamaEmbedModel)
 	log.Info().Msg("Embedder ready")
 
-	// SQLite Repository for prompts
-	promptRepo, err := repository.NewSQLiteRepository(cfg.SQLitePath)
-	if err != nil {
-		log.Warn().Err(err).Msg("SQLite not available, prompts will not be stored")
+	promptRepo, sqliteErr := repository.NewSQLiteRepository(cfg.SQLitePath)
+	if sqliteErr != nil {
+		log.Warn().Err(sqliteErr).Msg("SQLite not available, prompts will not be stored")
 		promptRepo = nil
+	} else {
+		defer func() {
+			if err := promptRepo.Close(); err != nil {
+				log.Warn().Err(err).Msg("SQLite close")
+			}
+		}()
 	}
 
 	// Decision Engine
@@ -135,12 +140,11 @@ func runRun(cmd *cobra.Command, args []string) error {
 		collector.Start(ctx)
 	}()
 
-	// HTTP API Server for subscription management
+	// HTTP API Server for subscription management + OpenAPI/Swagger
 	router := gin.Default()
 	apiServer := api.NewServer(collector, engine)
 	api.RegisterHandlersWithOptions(router, apiServer, api.GinServerOptions{})
 
-	// Serve embedded OpenAPI spec and Swagger UI
 	router.GET("/openapi.json", func(c *gin.Context) {
 		swagger, err := api.GetSwagger()
 		if err != nil {

@@ -10,6 +10,7 @@ import (
 
 	"github.com/rs/zerolog/log"
 	"kraken-trader/internal/news"
+	"kraken-trader/internal/repository"
 	"kraken-trader/internal/state"
 )
 
@@ -33,11 +34,13 @@ type Engine struct {
 	stateMgr     *state.MemoryManager
 	chromaClient *news.ChromaClient
 	embedder     *news.Embedder
+	prompts      repository.PromptRepository
 	httpClient   *http.Client
 }
 
-// NewEngine creates a new Llama-based decision engine
-func NewEngine(ollamaURL, model string, stateMgr *state.MemoryManager, chroma *news.ChromaClient, embedder *news.Embedder) *Engine {
+// NewEngine creates a new Llama-based decision engine.
+// prompts may be nil if SQLite logging is disabled.
+func NewEngine(ollamaURL, model string, stateMgr *state.MemoryManager, chroma *news.ChromaClient, embedder *news.Embedder, prompts repository.PromptRepository) *Engine {
 	if ollamaURL == "" {
 		ollamaURL = "http://localhost:11434"
 	}
@@ -50,6 +53,7 @@ func NewEngine(ollamaURL, model string, stateMgr *state.MemoryManager, chroma *n
 		stateMgr:     stateMgr,
 		chromaClient: chroma,
 		embedder:     embedder,
+		prompts:      prompts,
 		httpClient: &http.Client{
 			Timeout: 60 * time.Second, // LLM inference can take time on local hardware
 		},
@@ -159,6 +163,12 @@ func (e *Engine) callOllama(ctx context.Context, userPrompt string) ([]TradeDeci
 		}
 		log.Debug().Str("raw_output_preview", preview).Int("raw_output_length", len(ollamaResp.Message.Content)).Msg("Raw LLM output")
 		return nil, fmt.Errorf("failed to parse LLM decisions JSON: %w", err)
+	}
+
+	if e.prompts != nil {
+		if err := e.prompts.SaveLLMExchange(ctx, userPrompt, ollamaResp.Message.Content); err != nil {
+			log.Warn().Err(err).Msg("failed to persist LLM exchange to SQLite")
+		}
 	}
 
 	return result.Decisions, nil

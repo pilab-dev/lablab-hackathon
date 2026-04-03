@@ -1,0 +1,104 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Kraken Trader API",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Health check",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/subscriptions": {
+      "get": {
+        "summary": "List WebSocket ticker subscriptions",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "summary": "Subscribe to a symbol",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "symbol": { "type": "string" }
+                },
+                "required": ["symbol"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Subscribed" },
+          "409": { "description": "Already subscribed" }
+        }
+      }
+    },
+    "/subscriptions/{symbol}": {
+      "delete": {
+        "summary": "Unsubscribe",
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Removed" },
+          "404": { "description": "Not subscribed" }
+        }
+      }
+    },
+    "/v1/decide": {
+      "post": {
+        "summary": "Run the LLM decision engine for one or more pairs",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "pairs": {
+                    "type": "array",
+                    "items": { "type": "string" }
+                  }
+                },
+                "required": ["pairs"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Decisions" },
+          "400": { "description": "Bad request" },
+          "500": { "description": "Engine error" }
+        }
+      }
+    }
+  }
+}
