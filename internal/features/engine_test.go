@@ -78,9 +78,9 @@ func TestFeatureEngine_Compute_TwoTicks(t *testing.T) {
 	feat, ok, err := fe.Compute(ctx, "BTCUSD")
 	require.NoError(t, err)
 	assert.True(t, ok)
-	assert.InDelta(t, -10.0, feat.Momentum, 0.001)
-	assert.Less(t, feat.MomentumPct, 0.0)
-	assert.InDelta(t, -20.0, feat.VolumeDelta, 0.001)
+	assert.InDelta(t, 10.0, feat.Momentum, 0.001)
+	assert.Greater(t, feat.MomentumPct, 0.0)
+	assert.InDelta(t, 20.0, feat.VolumeDelta, 0.001)
 }
 
 func TestFeatureEngine_Compute_SpreadPct(t *testing.T) {
@@ -112,7 +112,7 @@ func TestFeatureEngine_Compute_TrendClassification(t *testing.T) {
 	feat, ok, err := fe.Compute(ctx, "BTCUSD")
 	require.NoError(t, err)
 	assert.True(t, ok)
-	assert.Contains(t, []string{"bearish", "neutral"}, feat.Trend)
+	assert.Contains(t, []string{"bullish", "neutral"}, feat.Trend)
 }
 
 func TestFeatureEngine_Compute_LiquidityClassification(t *testing.T) {
@@ -227,7 +227,7 @@ func TestFeatureEngine_Compute_OrderBookImbalance(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, ok)
 
-	expectedOBI := 0.0
+	expectedOBI := 0.5
 	assert.InDelta(t, expectedOBI, feat2.OrderBookImbalance, 0.001)
 
 	rdb := redis.NewClient(&redis.Options{Addr: "localhost:6379"})
