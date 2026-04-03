@@ -5,11 +5,11 @@
  * API for managing market data subscriptions and prompts
  * OpenAPI spec version: 1.0.0
  */
+import type { OHLCData } from './oHLCData';
 
-export interface SubscriptionDetail {
+export type GetHistory200 = {
   symbol?: string;
-  is_active?: boolean;
-  created_at?: string;
-  last_data?: string;
-  last_error?: string;
-}
+  timeframe?: string;
+  data?: OHLCData[];
+  count?: number;
+};

@@ -6,10 +6,11 @@
  * OpenAPI spec version: 1.0.0
  */
 
-export interface SubscriptionDetail {
-  symbol?: string;
-  is_active?: boolean;
-  created_at?: string;
-  last_data?: string;
-  last_error?: string;
+export interface OHLCData {
+  timestamp?: string;
+  open?: number;
+  high?: number;
+  low?: number;
+  close?: number;
+  volume?: number;
 }

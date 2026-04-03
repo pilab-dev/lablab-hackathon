@@ -6,10 +6,10 @@
  * OpenAPI spec version: 1.0.0
  */
 
-export interface SubscriptionDetail {
+export interface SignalSummary {
   symbol?: string;
-  is_active?: boolean;
-  created_at?: string;
-  last_data?: string;
-  last_error?: string;
+  momentum_signal?: string;
+  breakout_signal?: string;
+  volume_signal?: string;
+  updated_at?: string;
 }

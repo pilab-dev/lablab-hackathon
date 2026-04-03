@@ -105,6 +105,12 @@ type Collector struct {
 
 	wsMu    sync.Mutex
 	wsState wsState
+
+	pendingSubs map[string]string // normalized symbol -> original symbol (in-flight subscriptions)
+	pendingMu   sync.Mutex
+
+	lastErrors map[string]string // symbol -> last error message
+	errorsMu   sync.RWMutex
 }
 
 // NewCollector initializes a new market data collector using WebSockets
@@ -122,6 +128,8 @@ func NewCollector(cli *kraken.Client, db *storage.Client, stateMgr *state.Memory
 		ctx:           ctx,
 		cancel:        cancel,
 		wsState:       wsStateIdle,
+		pendingSubs:   make(map[string]string),
+		lastErrors:    make(map[string]string),
 	}
 }
 
@@ -184,6 +192,66 @@ func (c *Collector) runWebSocket(ctx context.Context) {
 	log.Info().Msg("WebSocket loop exited")
 }
 
+// NormalizeSymbol converts any symbol format to canonical "BASE/QUOTE" format.
+// Accepts: "ETHUSD", "ETH/USD", "ETH", "eth/usd", "BTCUSDT", etc.
+// Returns: uppercase "BASE/QUOTE" format (e.g., "ETH/USD", "BTC/USDT")
+func NormalizeSymbol(symbol string, pairsCache map[string]string) string {
+	symbol = strings.ToUpper(strings.TrimSpace(symbol))
+
+	if strings.Contains(symbol, "/") {
+		return symbol
+	}
+
+	knownQuotes := []string{"USDT", "USDC", "USD", "EUR", "GBP", "JPY", "CAD", "AUD", "DAI", "BUSD"}
+	for _, quote := range knownQuotes {
+		if strings.HasSuffix(symbol, quote) && len(symbol) > len(quote) {
+			base := symbol[:len(symbol)-len(quote)]
+			return base + "/" + quote
+		}
+	}
+
+	if wsname, ok := pairsCache[symbol]; ok {
+		return wsname
+	}
+
+	return symbol + "/USD"
+}
+
+// getWSNameForSymbol converts a user symbol to WebSocket name format
+func (c *Collector) getWSNameForSymbol(symbol string) string {
+	c.pairsMu.RLock()
+	defer c.pairsMu.RUnlock()
+
+	// First try direct lookup (e.g., "ETH" -> "ETH/USD")
+	if wsname, ok := c.pairsCache[symbol]; ok {
+		return wsname
+	}
+
+	// Try removing slashes and looking up (e.g., "ETH/USD" -> "ETH" -> "ETH/USD")
+	if strings.Contains(symbol, "/") {
+		base := strings.Split(symbol, "/")[0]
+		if wsname, ok := c.pairsCache[base]; ok {
+			return wsname
+		}
+	}
+
+	// Try adding USD and looking up (e.g., "ETHUSD" -> "ETH" -> "ETH/USD")
+	if strings.HasSuffix(symbol, "USD") {
+		base := strings.TrimSuffix(symbol, "USD")
+		if wsname, ok := c.pairsCache[base]; ok {
+			return wsname
+		}
+	}
+
+	// Last resort: if it already has a slash, use it as-is
+	if strings.Contains(symbol, "/") {
+		return symbol
+	}
+
+	log.Warn().Str("symbol", symbol).Msg("Could not find WebSocket name for symbol")
+	return ""
+}
+
 // getAllPairs returns all pairs to subscribe from DB subscriptions only
 func (c *Collector) getAllPairs() []string {
 	c.subsMu.RLock()
@@ -193,10 +261,21 @@ func (c *Collector) getAllPairs() []string {
 
 	result := make([]string, 0, len(c.subscriptions))
 	for sym := range c.subscriptions {
-		result = append(result, sym)
+		// Subscriptions are now stored in normalized format (ETH/USD), use directly
+		if strings.Contains(sym, "/") {
+			result = append(result, sym)
+		} else {
+			// Fallback for legacy data without slash
+			wsName := c.getWSNameForSymbol(sym)
+			if wsName != "" {
+				result = append(result, wsName)
+			} else {
+				log.Warn().Str("symbol", sym).Msg("Could not find WebSocket name for symbol, skipping")
+			}
+		}
 	}
 
-	log.Debug().Strs("pairs", result).Msg("getAllPairs returning")
+	log.Debug().Strs("pairs", result).Msg("getAllPairs returning WebSocket names")
 	return result
 }
 
@@ -316,43 +395,90 @@ func (c *Collector) handleSubscribe(line []byte) {
 	if subResp.Method != "subscribe" {
 		return
 	}
-	if subResp.Result.Symbol == "" {
+
+	symbol := subResp.Result.Symbol
+
+	if symbol == "" && !subResp.Success {
+		c.pendingMu.Lock()
+		if len(c.pendingSubs) > 0 {
+			for normalized, original := range c.pendingSubs {
+				symbol = normalized
+				log.Warn().Str("symbol", symbol).Str("original", original).Str("error", subResp.Error).Msg("Subscription failed")
+				c.errorsMu.Lock()
+				c.lastErrors[symbol] = subResp.Error
+				c.errorsMu.Unlock()
+
+				c.subsMu.Lock()
+				delete(c.subscriptions, symbol)
+				c.subsMu.Unlock()
+
+				c.publishToNATS("market.subscribe_failed", map[string]string{
+					"channel": "ticker",
+					"symbol":  symbol,
+					"error":   subResp.Error,
+				})
+				c.subsMu.Unlock()
+
+				delete(c.pendingSubs, normalized)
+				c.pendingMu.Unlock()
+				return
+			}
+		}
+		c.pendingMu.Unlock()
 		log.Warn().Str("method", subResp.Method).Bool("success", subResp.Success).Str("error", subResp.Error).Str("data", string(line)).Msg("Subscription response missing symbol")
 		return
 	}
+
 	if subResp.Success {
-		log.Info().Str("channel", subResp.Result.Channel).Str("symbol", subResp.Result.Symbol).Msg("Subscribed to channel")
+		log.Info().Str("channel", subResp.Result.Channel).Str("symbol", symbol).Msg("Subscribed to channel")
 		c.subsMu.Lock()
-		c.subscriptions[subResp.Result.Symbol] = true
+		c.subscriptions[symbol] = true
 		c.subsMu.Unlock()
 
+		c.pendingMu.Lock()
+		delete(c.pendingSubs, symbol)
+		c.pendingMu.Unlock()
+
+		c.errorsMu.Lock()
+		delete(c.lastErrors, symbol)
+		c.errorsMu.Unlock()
+
 		if c.repo != nil {
-			go func(symbol string) {
+			go func(sym string) {
 				sub := repository.Subscription{
-					Symbol:    symbol,
+					Symbol:    sym,
 					Channel:   "ticker",
 					IsActive:  true,
 					CreatedAt: time.Now(),
 				}
 				if err := c.repo.SaveSubscription(context.Background(), sub); err != nil {
-					log.Error().Err(err).Str("symbol", symbol).Msg("Failed to save subscription to DB")
+					log.Error().Err(err).Str("symbol", sym).Msg("Failed to save subscription to DB")
 				}
-			}(subResp.Result.Symbol)
+			}(symbol)
 		}
 
 		c.publishToNATS("market.subscribed", map[string]string{
 			"channel": subResp.Result.Channel,
-			"symbol":  subResp.Result.Symbol,
+			"symbol":  symbol,
 		})
 	} else {
-		log.Warn().Str("channel", subResp.Result.Channel).Str("symbol", subResp.Result.Symbol).Msg("Subscription failed")
+		log.Warn().Str("channel", subResp.Result.Channel).Str("symbol", symbol).Str("error", subResp.Error).Msg("Subscription failed")
 		c.subsMu.Lock()
-		delete(c.subscriptions, subResp.Result.Symbol)
+		delete(c.subscriptions, symbol)
 		c.subsMu.Unlock()
+
+		c.pendingMu.Lock()
+		delete(c.pendingSubs, symbol)
+		c.pendingMu.Unlock()
+
+		c.errorsMu.Lock()
+		c.lastErrors[symbol] = subResp.Error
+		c.errorsMu.Unlock()
 
 		c.publishToNATS("market.subscribe_failed", map[string]string{
 			"channel": subResp.Result.Channel,
-			"symbol":  subResp.Result.Symbol,
+			"symbol":  symbol,
+			"error":   subResp.Error,
 		})
 	}
 }
@@ -436,27 +562,14 @@ func (c *Collector) publishToNATS(subject string, data interface{}) {
 }
 
 func (c *Collector) FormatSymbol(symbol string) string {
-	// If already has slash, normalize to no-slash form
-	if strings.Contains(symbol, "/") {
-		return strings.ReplaceAll(symbol, "/", "")
-	}
-
-	// Check cache first
 	c.pairsMu.RLock()
-	if wsname, ok := c.pairsCache[symbol]; ok {
-		c.pairsMu.RUnlock()
-		return strings.ReplaceAll(wsname, "/", "")
-	}
-	// Also try appending USD as default quote
-	if wsname, ok := c.pairsCache[symbol+"USD"]; ok {
-		c.pairsMu.RUnlock()
-		return strings.ReplaceAll(wsname, "/", "")
+	cacheCopy := make(map[string]string, len(c.pairsCache))
+	for k, v := range c.pairsCache {
+		cacheCopy[k] = v
 	}
 	c.pairsMu.RUnlock()
 
-	// Not in cache, try to format as common pair
-	formatted := symbol + "/USD"
-	return strings.ReplaceAll(formatted, "/", "")
+	return NormalizeSymbol(symbol, cacheCopy)
 }
 
 // LoadPairsCache loads the pairs cache from Kraken API for symbol translation
@@ -576,6 +689,11 @@ func (c *Collector) AddSubscription(symbol string) bool {
 		return false
 	}
 	c.subscriptions[formatted] = true
+
+	c.pendingMu.Lock()
+	c.pendingSubs[formatted] = symbol
+	c.pendingMu.Unlock()
+
 	log.Debug().Str("symbol", formatted).Msg("Subscription added to in-memory map")
 	return true
 }
@@ -586,24 +704,24 @@ func (c *Collector) RemoveSubscription(symbol string) bool {
 
 	formatted := c.FormatSymbol(symbol)
 
-	// Try formatted first (without slash), then try original (with slash)
-	if !c.subscriptions[formatted] {
-		// Try with original (for legacy data)
-		if c.subscriptions[symbol] {
-			delete(c.subscriptions, symbol)
-			if c.repo != nil {
-				_ = c.repo.DeleteSubscription(context.Background(), symbol)
-			}
-			return true
+	// Try formatted first, then original
+	if c.subscriptions[formatted] {
+		delete(c.subscriptions, formatted)
+		if c.repo != nil {
+			_ = c.repo.DeleteSubscription(context.Background(), formatted)
 		}
-		return false
+		return true
 	}
-	delete(c.subscriptions, formatted)
 
-	if c.repo != nil {
-		_ = c.repo.DeleteSubscription(context.Background(), formatted)
+	if c.subscriptions[symbol] {
+		delete(c.subscriptions, symbol)
+		if c.repo != nil {
+			_ = c.repo.DeleteSubscription(context.Background(), symbol)
+		}
+		return true
 	}
-	return true
+
+	return false
 }
 
 func (c *Collector) GetAvailablePairs() []TradingPair {
@@ -623,4 +741,56 @@ func (c *Collector) GetAvailablePairs() []TradingPair {
 		})
 	}
 	return result
+}
+
+func (c *Collector) GetSubscriptionErrors() map[string]string {
+	c.errorsMu.RLock()
+	defer c.errorsMu.RUnlock()
+
+	result := make(map[string]string, len(c.lastErrors))
+	for k, v := range c.lastErrors {
+		result[k] = v
+	}
+	return result
+}
+
+func (c *Collector) GetSubscriptionHealth() (active, stale, errored int) {
+	c.subsMu.RLock()
+	defer c.subsMu.RUnlock()
+
+	now := time.Now()
+	for sym := range c.subscriptions {
+		_, lastData, ok := c.getSubscriptionDetailInternal(sym)
+		if !ok {
+			active++
+			continue
+		}
+		if lastData.IsZero() || now.Sub(lastData) > 30*time.Second {
+			stale++
+		} else {
+			active++
+		}
+	}
+
+	c.errorsMu.RLock()
+	errored = len(c.lastErrors)
+	c.errorsMu.RUnlock()
+
+	return
+}
+
+func (c *Collector) getSubscriptionDetailInternal(symbol string) (createdAt, lastData time.Time, ok bool) {
+	if c.repo == nil {
+		return time.Time{}, time.Time{}, false
+	}
+	subs, err := c.repo.GetActiveSubscriptions(context.Background())
+	if err != nil {
+		return time.Time{}, time.Time{}, false
+	}
+	for _, s := range subs {
+		if s.Symbol == symbol {
+			return s.CreatedAt, s.LastData, true
+		}
+	}
+	return time.Time{}, time.Time{}, false
 }

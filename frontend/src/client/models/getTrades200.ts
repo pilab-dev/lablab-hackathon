@@ -5,11 +5,9 @@
  * API for managing market data subscriptions and prompts
  * OpenAPI spec version: 1.0.0
  */
+import type { TradeRecord } from './tradeRecord';
 
-export interface SubscriptionDetail {
-  symbol?: string;
-  is_active?: boolean;
-  created_at?: string;
-  last_data?: string;
-  last_error?: string;
-}
+export type GetTrades200 = {
+  trades?: TradeRecord[];
+  count?: number;
+};

@@ -168,3 +168,90 @@ func (m *MemoryManager) UpdateBalance(balances map[string]float64) {
 	m.portfolio.Balances = balances
 	m.portfolio.UpdatedAt = time.Now()
 }
+
+// GetPortfolioSummary returns portfolio with calculated TotalValueUSD
+// Uses current market prices to value non-USD balances
+func (m *MemoryManager) GetPortfolioSummary() PortfolioState {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	balances := make(map[string]float64, len(m.portfolio.Balances))
+	for k, v := range m.portfolio.Balances {
+		balances[k] = v
+	}
+
+	totalUSD := 0.0
+	for asset, amount := range balances {
+		if asset == "USD" || asset == "ZUSD" || asset == "USDT" || asset == "USDC" {
+			totalUSD += amount
+			continue
+		}
+
+		pairKey := asset + "USD"
+		if state, exists := m.market[pairKey]; exists && state.Last > 0 {
+			totalUSD += amount * state.Last
+		}
+	}
+
+	return PortfolioState{
+		TotalValueUSD: totalUSD,
+		Balances:      balances,
+		OpenPositions: m.portfolio.OpenPositions,
+		UpdatedAt:     m.portfolio.UpdatedAt,
+	}
+}
+
+// GetAllMarketSnapshots returns a copy of all pair states
+func (m *MemoryManager) GetAllMarketSnapshots() map[string]PairState {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	result := make(map[string]PairState, len(m.market))
+	for k, v := range m.market {
+		result[k] = *v
+	}
+	return result
+}
+
+// GetNews returns a copy of recent news articles
+func (m *MemoryManager) GetNews() []NewsArticle {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	result := make([]NewsArticle, len(m.news))
+	copy(result, m.news)
+	return result
+}
+
+// GetRecentAlerts returns recent price alerts based on price history analysis
+func (m *MemoryManager) GetRecentAlerts(limit int) []map[string]interface{} {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	alerts := make([]map[string]interface{}, 0, limit)
+	for _, state := range m.market {
+		if len(state.PriceHistory) >= 2 {
+			recent := state.PriceHistory[len(state.PriceHistory)-1]
+			older := state.PriceHistory[0]
+			if older > 0 {
+				changePct := ((recent - older) / older) * 100
+				if changePct >= 0.5 || changePct <= -0.5 {
+					alerts = append(alerts, map[string]interface{}{
+						"pair":       state.Pair,
+						"change_pct": changePct,
+						"current":    recent,
+						"previous":   older,
+						"updated_at": state.UpdatedAt,
+						"direction":  "up",
+					})
+				}
+			}
+		}
+	}
+
+	if len(alerts) > limit {
+		alerts = alerts[:limit]
+	}
+
+	return alerts
+}
