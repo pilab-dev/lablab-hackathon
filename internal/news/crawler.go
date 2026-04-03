@@ -4,10 +4,10 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/mmcdole/gofeed"
+	"github.com/rs/zerolog/log"
 	"kraken-trader/internal/state"
 )
 
@@ -38,14 +38,14 @@ func NewCrawler(prismClient *PrismClient, embedder *Embedder, chromaClient *Chro
 
 // Start begins the periodic polling for news and signals
 func (c *Crawler) Start(ctx context.Context) {
-	log.Println("Starting News & Signals Crawler...")
+	log.Info().Msg("Starting News & Signals Crawler...")
 
 	// Initialize ChromaDB Collection
 	if c.chromaClient != nil {
 		if err := c.chromaClient.Initialize(ctx, "crypto_news"); err != nil {
-			log.Printf("Failed to initialize ChromaDB collection: %v", err)
+			log.Error().Err(err).Msg("Failed to initialize ChromaDB collection")
 		} else {
-			log.Println("ChromaDB initialized for news embeddings.")
+			log.Info().Msg("ChromaDB initialized for news embeddings")
 		}
 	}
 
@@ -64,7 +64,7 @@ func (c *Crawler) Start(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			log.Println("News Crawler stopping...")
+			log.Info().Msg("News Crawler stopping...")
 			return
 		case <-signalTicker.C:
 			c.fetchSignals(ctx)
@@ -82,13 +82,13 @@ func (c *Crawler) fetchSignals(ctx context.Context) {
 	// For the hackathon, we fetch BTC and ETH signals
 	summaries, err := c.prismClient.FetchSignalSummary(ctx, []string{"BTC", "ETH"})
 	if err != nil {
-		log.Printf("Error fetching PRISM signals: %v", err)
+		log.Error().Err(err).Msg("Error fetching PRISM signals")
 		return
 	}
 
 	for _, s := range summaries {
 		// Update the RAM state manager so the LLM Prompt Builder has instant access
-		c.stateMgr.UpdateSignal(s.Symbol, s.Momentum, s.Breakout, s.Volume)
+		c.stateMgr.UpdateSignal(s.Symbol, s.OverallSignal, s.Direction, s.Strength)
 	}
 }
 
@@ -97,11 +97,11 @@ func (c *Crawler) fetchNews(ctx context.Context) {
 
 	// Try PRISM first
 	if c.prismClient != nil && c.prismClient.apiKey != "" {
-		prismArticles, err := c.prismClient.FetchCryptoNews(ctx, 10)
+		prismArticles, err := c.prismClient.FetchCryptoNews(ctx, 10, 0)
 		if err == nil {
 			allArticles = append(allArticles, prismArticles...)
 		} else {
-			log.Printf("PRISM news fetch failed, falling back to RSS: %v", err)
+			log.Warn().Err(err).Msg("PRISM news fetch failed, falling back to RSS")
 		}
 	}
 
@@ -109,7 +109,7 @@ func (c *Crawler) fetchNews(ctx context.Context) {
 	for _, url := range c.rssUrls {
 		feed, err := c.feedParser.ParseURLWithContext(url, ctx)
 		if err != nil {
-			log.Printf("Error parsing RSS feed %s: %v", url, err)
+			log.Error().Err(err).Str("url", url).Msg("Error parsing RSS feed")
 			continue
 		}
 
@@ -156,15 +156,15 @@ func (c *Crawler) fetchNews(ctx context.Context) {
 	if c.embedder != nil && c.chromaClient != nil {
 		embeddings, err := c.embedder.BatchEmbed(ctx, allArticles)
 		if err != nil {
-			log.Printf("Error embedding news articles: %v", err)
+			log.Error().Err(err).Msg("Error embedding news articles")
 			return
 		}
 
 		err = c.chromaClient.AddEmbeddings(ctx, allArticles, embeddings)
 		if err != nil {
-			log.Printf("Error storing embeddings in ChromaDB: %v", err)
+			log.Error().Err(err).Msg("Error storing embeddings in ChromaDB")
 		} else {
-			log.Printf("Successfully embedded and stored %d articles in ChromaDB.", len(allArticles))
+			log.Info().Int("articles", len(allArticles)).Msg("Successfully embedded and stored articles in ChromaDB")
 		}
 	}
 }
