@@ -114,3 +114,21 @@ func (c *Client) RunStream(ctx context.Context, callback func([]byte), args ...s
 
 	return nil
 }
+
+type BalanceResponse struct {
+	Error  interface{}        `json:"error"`
+	Result map[string]float64 `json:"result,omitempty"`
+}
+
+func (c *Client) GetBalance(ctx context.Context) (map[string]float64, error) {
+	var resp BalanceResponse
+	if err := c.Run(ctx, &resp, "balance"); err != nil {
+		return nil, err
+	}
+
+	if resp.Error != nil {
+		return nil, fmt.Errorf("balance error: %v", resp.Error)
+	}
+
+	return resp.Result, nil
+}

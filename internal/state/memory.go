@@ -152,3 +152,19 @@ func (m *MemoryManager) GetMarketSnapshot(pair string) (PairState, bool) {
 	}
 	return *state, true
 }
+
+// GetPortfolio returns a thread-safe copy of the current portfolio state
+func (m *MemoryManager) GetPortfolio() PortfolioState {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return *m.portfolio
+}
+
+// UpdateBalance updates the account balances
+func (m *MemoryManager) UpdateBalance(balances map[string]float64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.portfolio.Balances = balances
+	m.portfolio.UpdatedAt = time.Now()
+}

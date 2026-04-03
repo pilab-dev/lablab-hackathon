@@ -12,14 +12,17 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 
+	"kraken-trader/internal/api"
 	"kraken-trader/internal/decision"
 	"kraken-trader/internal/market"
 	"kraken-trader/internal/messaging"
 	"kraken-trader/internal/news"
+	"kraken-trader/internal/repository"
 	"kraken-trader/internal/state"
 	"kraken-trader/internal/storage"
 	"kraken-trader/pkg/config"
@@ -104,6 +107,13 @@ func runRun(cmd *cobra.Command, args []string) error {
 	embedder := news.NewEmbedder(cfg.OllamaURL, cfg.OllamaEmbedModel)
 	log.Info().Msg("Embedder ready")
 
+	// SQLite Repository for prompts
+	promptRepo, err := repository.NewSQLiteRepository(cfg.SQLitePath)
+	if err != nil {
+		log.Warn().Err(err).Msg("SQLite not available, prompts will not be stored")
+		promptRepo = nil
+	}
+
 	// Decision Engine
 	engine := decision.NewEngine(
 		cfg.OllamaURL,
@@ -111,13 +121,14 @@ func runRun(cmd *cobra.Command, args []string) error {
 		stateMgr,
 		chromaClient,
 		embedder,
+		promptRepo,
 	)
 	log.Info().Msg("Decision engine initialized")
 
 	// ── Start Data Pipelines ───────────────────────────────────────
 
 	// Market Data Collector (WebSocket via kraken CLI)
-	collector := market.NewCollector(krakenClient, dbClient, stateMgr, natsClient, cfg.TradePairs)
+	collector := market.NewCollector(krakenClient, dbClient, stateMgr, natsClient, promptRepo, cfg.TradePairs)
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -125,13 +136,52 @@ func runRun(cmd *cobra.Command, args []string) error {
 	}()
 
 	// HTTP API Server for subscription management
-	apiServer := market.NewServer(collector)
+	router := gin.Default()
+	apiServer := api.NewServer(collector, engine)
+	api.RegisterHandlersWithOptions(router, apiServer, api.GinServerOptions{})
+
+	// Serve embedded OpenAPI spec and Swagger UI
+	router.GET("/openapi.json", func(c *gin.Context) {
+		swagger, err := api.GetSwagger()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get swagger"})
+			return
+		}
+		c.JSON(http.StatusOK, swagger)
+	})
+	router.GET("/swagger", func(c *gin.Context) {
+		c.Redirect(http.StatusMovedPermanently, "/swagger/")
+	})
+	router.GET("/swagger/", func(c *gin.Context) {
+		c.Header("Content-Type", "text/html")
+		c.String(http.StatusOK, `<!DOCTYPE html>
+<html>
+<head>
+    <title>Kraken Trader API</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css" />
+</head>
+<body>
+    <div id="swagger-ui"></div>
+    <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+    <script>
+        window.onload = () => {
+            window.ui = SwaggerUIBundle({
+                url: "/openapi.json",
+                dom_id: "#swagger-ui",
+                deepLinking: true
+            });
+        };
+    </script>
+</body>
+</html>`)
+	})
+
 	apiAddr := fmt.Sprintf(":%d", cfg.APIPort)
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		log.Info().Int("port", cfg.APIPort).Msg("Starting Market API server")
-		if err := http.ListenAndServe(apiAddr, apiServer); err != nil && err != http.ErrServerClosed {
+		if err := http.ListenAndServe(apiAddr, router); err != nil && err != http.ErrServerClosed {
 			log.Error().Err(err).Msg("API server error")
 		}
 	}()
@@ -141,6 +191,13 @@ func runRun(cmd *cobra.Command, args []string) error {
 	go func() {
 		defer wg.Done()
 		pollSignals(ctx, prismClient, stateMgr, cfg.TradePairs)
+	}()
+
+	// Balance Polling (every 30s)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		pollBalance(ctx, krakenClient, stateMgr)
 	}()
 
 	// News Ingestion + Embedding (every 120s)
@@ -229,6 +286,8 @@ func fetchAndStoreSignals(ctx context.Context, prism *news.PrismClient, stateMgr
 		return
 	}
 
+	log.Trace().Interface("signals", summaries).Msg("PRISM signals response")
+
 	for _, s := range summaries {
 		stateMgr.UpdateSignal(s.Symbol, s.OverallSignal, s.Direction, s.Strength)
 	}
@@ -258,6 +317,8 @@ func fetchAndStoreNews(ctx context.Context, prism *news.PrismClient, chroma *new
 		log.Error().Err(err).Msg("Failed to fetch PRISM news")
 		return
 	}
+
+	log.Trace().Interface("articles", articles).Int("count", len(articles)).Msg("PRISM news response")
 
 	if len(articles) == 0 {
 		return
@@ -358,4 +419,32 @@ func runDecisionLoop(ctx context.Context, stateMgr *state.MemoryManager, engine 
 			}
 		}
 	}
+}
+
+// pollBalance periodically fetches account balance from Kraken and stores in memory
+func pollBalance(ctx context.Context, krakenClient *kraken.Client, stateMgr *state.MemoryManager) {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	fetchAndStoreBalance(ctx, krakenClient, stateMgr)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			fetchAndStoreBalance(ctx, krakenClient, stateMgr)
+		}
+	}
+}
+
+func fetchAndStoreBalance(ctx context.Context, krakenClient *kraken.Client, stateMgr *state.MemoryManager) {
+	balances, err := krakenClient.GetBalance(ctx)
+	if err != nil {
+		log.Debug().Err(err).Msg("Failed to fetch balance")
+		return
+	}
+
+	stateMgr.UpdateBalance(balances)
+	log.Info().Int("assets", len(balances)).Msg("Updated account balances")
 }
