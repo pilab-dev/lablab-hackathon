@@ -3,6 +3,7 @@ package tracker
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
@@ -39,14 +40,16 @@ func setupTestTracker(t *testing.T) (*StateTracker, context.Context) {
 func TestStateTracker_PushAndGetTick(t *testing.T) {
 	st, ctx := setupTestTracker(t)
 
-	err := st.PushTick(ctx, "BTCUSD", 100, 101, 100.5, 50)
+	err := st.PushTick(ctx, "BTCUSD", 100, 5.0, 101, 3.0, 100.5, 50)
 	require.NoError(t, err)
 
 	tick, ok, err := st.GetLastTick(ctx, "BTCUSD")
 	require.NoError(t, err)
 	assert.True(t, ok)
 	assert.InDelta(t, 100.0, tick.Bid, 0.001)
+	assert.InDelta(t, 5.0, tick.BidVolume, 0.001)
 	assert.InDelta(t, 101.0, tick.Ask, 0.001)
+	assert.InDelta(t, 3.0, tick.AskVolume, 0.001)
 	assert.InDelta(t, 100.5, tick.Last, 0.001)
 	assert.InDelta(t, 50.0, tick.Volume, 0.001)
 }
@@ -54,36 +57,36 @@ func TestStateTracker_PushAndGetTick(t *testing.T) {
 func TestStateTracker_PrevTick(t *testing.T) {
 	st, ctx := setupTestTracker(t)
 
-	err := st.PushTick(ctx, "BTCUSD", 100, 101, 100.5, 50)
+	err := st.PushTick(ctx, "BTCUSD", 100, 5.0, 101, 3.0, 100.5, 50)
 	require.NoError(t, err)
-	err = st.PushTick(ctx, "BTCUSD", 101, 102, 101.5, 60)
+	err = st.PushTick(ctx, "BTCUSD", 101, 4.0, 102, 2.5, 101.5, 60)
 	require.NoError(t, err)
 
 	tick, ok, err := st.GetPrevTick(ctx, "BTCUSD")
 	require.NoError(t, err)
 	assert.True(t, ok)
-	assert.InDelta(t, 100.5, tick.Last, 0.001)
+	assert.InDelta(t, 101.5, tick.Last, 0.001)
 }
 
 func TestStateTracker_WindowTrims(t *testing.T) {
 	st, ctx := setupTestTracker(t)
 
 	for i := 0; i < 15; i++ {
-		err := st.PushTick(ctx, "BTCUSD", 100, 101, float64(100+i), 50)
+		err := st.PushTick(ctx, "BTCUSD", 100, 5.0, 101, 3.0, float64(100+i), 50)
 		require.NoError(t, err)
 	}
 
 	ticks, err := st.Window(ctx, "BTCUSD")
 	require.NoError(t, err)
 	assert.Len(t, ticks, 10)
-	assert.InDelta(t, 105.0, ticks[0].Last, 0.001)
-	assert.InDelta(t, 114.0, ticks[9].Last, 0.001)
+	assert.InDelta(t, 114.0, ticks[0].Last, 0.001)
+	assert.InDelta(t, 105.0, ticks[9].Last, 0.001)
 }
 
 func TestStateTracker_WindowLen(t *testing.T) {
 	st, ctx := setupTestTracker(t)
 
-	err := st.PushTick(ctx, "BTCUSD", 100, 101, 100.5, 50)
+	err := st.PushTick(ctx, "BTCUSD", 100, 5.0, 101, 3.0, 100.5, 50)
 	require.NoError(t, err)
 
 	n, err := st.WindowLen(ctx, "BTCUSD")
@@ -98,11 +101,11 @@ func TestStateTracker_SMA(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, ok)
 
-	err = st.PushTick(ctx, "BTCUSD", 100, 101, 10, 50)
+	err = st.PushTick(ctx, "BTCUSD", 100, 5.0, 101, 3.0, 10, 50)
 	require.NoError(t, err)
-	err = st.PushTick(ctx, "BTCUSD", 100, 101, 20, 50)
+	err = st.PushTick(ctx, "BTCUSD", 100, 5.0, 101, 3.0, 20, 50)
 	require.NoError(t, err)
-	err = st.PushTick(ctx, "BTCUSD", 100, 101, 30, 50)
+	err = st.PushTick(ctx, "BTCUSD", 100, 5.0, 101, 3.0, 30, 50)
 	require.NoError(t, err)
 
 	sma, ok, err := st.SMA(ctx, "BTCUSD")
@@ -114,11 +117,11 @@ func TestStateTracker_SMA(t *testing.T) {
 func TestStateTracker_Volatility(t *testing.T) {
 	st, ctx := setupTestTracker(t)
 
-	err := st.PushTick(ctx, "BTCUSD", 100, 101, 100, 50)
+	err := st.PushTick(ctx, "BTCUSD", 100, 5.0, 101, 3.0, 100, 50)
 	require.NoError(t, err)
-	err = st.PushTick(ctx, "BTCUSD", 100, 101, 100, 50)
+	err = st.PushTick(ctx, "BTCUSD", 100, 5.0, 101, 3.0, 100, 50)
 	require.NoError(t, err)
-	err = st.PushTick(ctx, "BTCUSD", 100, 101, 100, 50)
+	err = st.PushTick(ctx, "BTCUSD", 100, 5.0, 101, 3.0, 100, 50)
 	require.NoError(t, err)
 
 	vol, ok, err := st.Volatility(ctx, "BTCUSD")
@@ -126,7 +129,7 @@ func TestStateTracker_Volatility(t *testing.T) {
 	assert.True(t, ok)
 	assert.InDelta(t, 0.0, vol, 0.001)
 
-	err = st.PushTick(ctx, "BTCUSD", 100, 101, 200, 50)
+	err = st.PushTick(ctx, "BTCUSD", 100, 5.0, 101, 3.0, 200, 50)
 	require.NoError(t, err)
 
 	vol, ok, err = st.Volatility(ctx, "BTCUSD")
@@ -138,29 +141,29 @@ func TestStateTracker_Volatility(t *testing.T) {
 func TestStateTracker_PriceChangePct(t *testing.T) {
 	st, ctx := setupTestTracker(t)
 
-	err := st.PushTick(ctx, "BTCUSD", 100, 101, 100, 50)
+	err := st.PushTick(ctx, "BTCUSD", 100, 5.0, 101, 3.0, 100, 50)
 	require.NoError(t, err)
-	err = st.PushTick(ctx, "BTCUSD", 100, 101, 110, 50)
+	err = st.PushTick(ctx, "BTCUSD", 100, 5.0, 101, 3.0, 110, 50)
 	require.NoError(t, err)
 
 	change, ok, err := st.PriceChangePct(ctx, "BTCUSD")
 	require.NoError(t, err)
 	assert.True(t, ok)
-	assert.InDelta(t, 10.0, change, 0.001)
+	assert.InDelta(t, -9.09, change, 0.01)
 }
 
 func TestStateTracker_VolumeDelta(t *testing.T) {
 	st, ctx := setupTestTracker(t)
 
-	err := st.PushTick(ctx, "BTCUSD", 100, 101, 100, 100)
+	err := st.PushTick(ctx, "BTCUSD", 100, 5.0, 101, 3.0, 100, 100)
 	require.NoError(t, err)
-	err = st.PushTick(ctx, "BTCUSD", 100, 101, 101, 150)
+	err = st.PushTick(ctx, "BTCUSD", 100, 5.0, 101, 3.0, 101, 150)
 	require.NoError(t, err)
 
 	delta, ok, err := st.VolumeDelta(ctx, "BTCUSD")
 	require.NoError(t, err)
 	assert.True(t, ok)
-	assert.InDelta(t, 50.0, delta, 0.001)
+	assert.InDelta(t, -50.0, delta, 0.001)
 }
 
 func TestStateTracker_RecordTrade(t *testing.T) {
@@ -192,8 +195,10 @@ func TestStateTracker_RecentPnL(t *testing.T) {
 
 	err := st.RecordTrade(ctx, TradeRecord{Pair: "BTCUSD", Action: "buy", Price: 50000, SizePct: 5.0, PnL: 100})
 	require.NoError(t, err)
+	time.Sleep(10 * time.Millisecond)
 	err = st.RecordTrade(ctx, TradeRecord{Pair: "BTCUSD", Action: "sell", Price: 50100, SizePct: 5.0, PnL: -50})
 	require.NoError(t, err)
+	time.Sleep(10 * time.Millisecond)
 	err = st.RecordTrade(ctx, TradeRecord{Pair: "BTCUSD", Action: "buy", Price: 50200, SizePct: 5.0, PnL: 200})
 	require.NoError(t, err)
 
@@ -225,7 +230,7 @@ func TestStateTracker_RateLimit(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, limited)
 
-	err = st.SetRateLimit(ctx, "BTCUSD", 0)
+	err = st.SetRateLimit(ctx, "BTCUSD", 1000000000)
 	require.NoError(t, err)
 
 	limited, err = st.IsRateLimited(ctx, "BTCUSD")

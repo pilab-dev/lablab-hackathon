@@ -56,7 +56,7 @@ func TestRiskGuard_Check_AllPassed(t *testing.T) {
 	cfg := DefaultRiskConfig()
 	rg := NewRiskGuard(cfg, st)
 
-	err := st.PushTick(ctx, "BTCUSD", 100, 100.01, 100.005, 100)
+	err := st.PushTick(ctx, "BTCUSD", 100, 5.0, 100.01, 3.0, 100.005, 100)
 	require.NoError(t, err)
 
 	result := rg.Check(ctx, "BTCUSD", "buy", 5.0, 0.9, 100.005)
@@ -70,7 +70,7 @@ func TestRiskGuard_Check_LowConfidence(t *testing.T) {
 	cfg := DefaultRiskConfig()
 	rg := NewRiskGuard(cfg, st)
 
-	err := st.PushTick(ctx, "BTCUSD", 100, 100.01, 100.005, 100)
+	err := st.PushTick(ctx, "BTCUSD", 100, 5.0, 100.01, 3.0, 100.005, 100)
 	require.NoError(t, err)
 
 	result := rg.Check(ctx, "BTCUSD", "buy", 5.0, 0.5, 100.005)
@@ -83,7 +83,7 @@ func TestRiskGuard_Check_Drawdown(t *testing.T) {
 	cfg := DefaultRiskConfig()
 	rg := NewRiskGuard(cfg, st)
 
-	err := st.PushTick(ctx, "BTCUSD", 100, 100.01, 100.005, 100)
+	err := st.PushTick(ctx, "BTCUSD", 100, 5.0, 100.01, 3.0, 100.005, 100)
 	require.NoError(t, err)
 
 	err = st.RecordTrade(ctx, tracker.TradeRecord{Pair: "BTCUSD", Action: "buy", Price: 100, SizePct: 10, PnL: -6.0})
@@ -106,7 +106,7 @@ func TestRiskGuard_Check_Cooldown(t *testing.T) {
 	}
 	rg := NewRiskGuard(cfg, st)
 
-	err := st.PushTick(ctx, "BTCUSD", 100, 100.01, 100.005, 100)
+	err := st.PushTick(ctx, "BTCUSD", 100, 5.0, 100.01, 3.0, 100.005, 100)
 	require.NoError(t, err)
 
 	err = st.RecordTrade(ctx, tracker.TradeRecord{Pair: "BTCUSD", Action: "buy", Price: 100, SizePct: 10, PnL: 1.0})
@@ -122,7 +122,7 @@ func TestRiskGuard_Check_PositionSizeCap(t *testing.T) {
 	cfg := DefaultRiskConfig()
 	rg := NewRiskGuard(cfg, st)
 
-	err := st.PushTick(ctx, "BTCUSD", 100, 100.01, 100.005, 100)
+	err := st.PushTick(ctx, "BTCUSD", 100, 5.0, 100.01, 3.0, 100.005, 100)
 	require.NoError(t, err)
 
 	result := rg.Check(ctx, "BTCUSD", "buy", 15.0, 0.9, 100.005)
@@ -142,7 +142,7 @@ func TestRiskGuard_Check_Slippage(t *testing.T) {
 	}
 	rg := NewRiskGuard(cfg, st)
 
-	err := st.PushTick(ctx, "BTCUSD", 100, 100.05, 100.025, 100)
+	err := st.PushTick(ctx, "BTCUSD", 100, 5.0, 100.05, 3.0, 100.025, 100)
 	require.NoError(t, err)
 
 	result := rg.Check(ctx, "BTCUSD", "buy", 5.0, 0.9, 100.025)

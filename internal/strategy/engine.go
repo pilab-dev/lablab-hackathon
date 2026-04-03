@@ -36,13 +36,29 @@ type StrategyResult struct {
 type StrategyEngine struct {
 	features *features.FeatureEngine
 	stateMgr *state.MemoryManager
+
+	// Weighted scoring parameters
+	WeightOBI       float64 // W_obi: Order Book Imbalance weight (default 0.3)
+	WeightSentiment float64 // W_sent: Sentiment weight (default 0.2)
+	WeightAI        float64 // W_ai: AI confidence weight (default 0.5)
+
+	// Entry/exit thresholds
+	EntryScoreThreshold float64 // FinalScore > this triggers entry (default 0.75)
+	ExitScoreThreshold  float64 // FinalScore < this triggers exit (default 0.4)
+	EntryMaxSpreadPct   float64 // Spread must be < this for entry (default 0.05%)
 }
 
 // NewStrategyEngine creates a new strategy engine
 func NewStrategyEngine(fe *features.FeatureEngine, sm *state.MemoryManager) *StrategyEngine {
 	return &StrategyEngine{
-		features: fe,
-		stateMgr: sm,
+		features:            fe,
+		stateMgr:            sm,
+		WeightOBI:           0.3,
+		WeightSentiment:     0.2,
+		WeightAI:            0.5,
+		EntryScoreThreshold: 0.75,
+		ExitScoreThreshold:  0.4,
+		EntryMaxSpreadPct:   0.05,
 	}
 }
 
@@ -235,4 +251,73 @@ func (se *StrategyEngine) EvaluateAll(ctx context.Context, pairs []string) ([]*S
 		}
 	}
 	return results, nil
+}
+
+// EvaluateWithWeightedScore computes the final weighted score using the formula:
+// FinalScore = (W_obi * OBI) + (W_sent * Sentiment) + (W_ai * AI_Conf)
+// It also determines entry/exit triggers based on thresholds.
+func (se *StrategyEngine) EvaluateWithWeightedScore(ctx context.Context, pair string, aiConfidence float64) (*StrategyResult, bool, error) {
+	feat, ok, err := se.features.Compute(ctx, pair)
+	if err != nil || !ok {
+		return nil, false, err
+	}
+
+	obiNormalized := feat.OrderBookImbalance
+
+	snap, hasSnap := se.stateMgr.GetMarketSnapshot(pair)
+	sentimentNormalized := 0.0
+	if hasSnap {
+		rawSentiment := se.scorePRISM(snap)
+		sentimentNormalized = rawSentiment
+	}
+
+	aiConfidenceNormalized := aiConfidence
+
+	finalScore := (se.WeightOBI * obiNormalized) +
+		(se.WeightSentiment * sentimentNormalized) +
+		(se.WeightAI * aiConfidenceNormalized)
+
+	if finalScore > 1.0 {
+		finalScore = 1.0
+	}
+	if finalScore < -1.0 {
+		finalScore = -1.0
+	}
+
+	reasons := []string{}
+	signal := se.scoreToSignal(finalScore)
+
+	reasons = append(reasons, fmt.Sprintf("weighted_score=%.2f (OBI=%.2f*%.2f + Sent=%.2f*%.2f + AI=%.2f*%.2f)",
+		finalScore,
+		se.WeightOBI, obiNormalized,
+		se.WeightSentiment, sentimentNormalized,
+		se.WeightAI, aiConfidenceNormalized))
+
+	shouldEntry := finalScore > se.EntryScoreThreshold && feat.SpreadPct < se.EntryMaxSpreadPct
+	shouldExit := finalScore < se.ExitScoreThreshold
+
+	if shouldEntry {
+		reasons = append(reasons, "entry signal: score above threshold and spread tight")
+	}
+	if shouldExit {
+		reasons = append(reasons, "exit signal: score below threshold")
+	}
+
+	confidence := se.calcConfidence(feat, hasSnap)
+
+	if feat.SpreadPct > 0.1 {
+		if confidence > 0.3 {
+			confidence = 0.3
+			reasons = append(reasons, "confidence capped due to wide spread")
+		}
+	}
+
+	return &StrategyResult{
+		Pair:       pair,
+		Signal:     signal,
+		Score:      finalScore,
+		Confidence: confidence,
+		Reasons:    reasons,
+		Timestamp:  time.Now(),
+	}, true, nil
 }

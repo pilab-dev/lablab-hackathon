@@ -13,10 +13,12 @@ import (
 
 // Tick represents a single market data point
 type Tick struct {
-	Bid    float64
-	Ask    float64
-	Last   float64
-	Volume float64
+	Bid       float64
+	BidVolume float64
+	Ask       float64
+	AskVolume float64
+	Last      float64
+	Volume    float64
 }
 
 // TradeRecord stores executed trades for drawdown tracking
@@ -44,9 +46,9 @@ func NewStateTracker(rdb *redis.Client, maxWindow int) *StateTracker {
 }
 
 // PushTick adds a tick to the pair's Redis list (LPUSH + LTRIM)
-func (st *StateTracker) PushTick(ctx context.Context, pair string, bid, ask, last, volume float64) error {
+func (st *StateTracker) PushTick(ctx context.Context, pair string, bid, bidVol, ask, askVol, last, volume float64) error {
 	key := tickKey(pair)
-	member := encodeTick(bid, ask, last, volume)
+	member := encodeTick(bid, bidVol, ask, askVol, last, volume)
 
 	pipe := st.rdb.Pipeline()
 	pipe.LPush(ctx, key, member)
@@ -186,6 +188,31 @@ func (st *StateTracker) VolumeDelta(ctx context.Context, pair string) (float64, 
 	}
 
 	return ticks[len(ticks)-1].Volume - ticks[len(ticks)-2].Volume, true, nil
+}
+
+// VolumeSurge returns the ratio of current volume to average volume in the window
+func (st *StateTracker) VolumeSurge(ctx context.Context, pair string) (float64, bool, error) {
+	ticks, err := st.Window(ctx, pair)
+	if err != nil {
+		return 0, false, err
+	}
+	if len(ticks) < 2 {
+		return 0, false, nil
+	}
+
+	currentVol := ticks[0].Volume
+
+	sum := 0.0
+	for _, t := range ticks[1:] {
+		sum += t.Volume
+	}
+	avgVol := sum / float64(len(ticks)-1)
+
+	if avgVol == 0 {
+		return 0, false, nil
+	}
+
+	return currentVol / avgVol, true, nil
 }
 
 // RecordTrade stores a trade in a Redis sorted set for drawdown tracking
@@ -332,20 +359,22 @@ func tickKey(pair string) string     { return "ticks:" + pair }
 func tradeKey(pair string) string    { return "trades:" + pair }
 func cooldownKey(pair string) string { return "cooldown:" + pair }
 
-func encodeTick(bid, ask, last, volume float64) string {
-	return fmt.Sprintf("%.6f:%.6f:%.6f:%.6f", bid, ask, last, volume)
+func encodeTick(bid, bidVol, ask, askVol, last, volume float64) string {
+	return fmt.Sprintf("%.6f:%.6f:%.6f:%.6f:%.6f:%.6f", bid, bidVol, ask, askVol, last, volume)
 }
 
 func decodeTick(val string) (Tick, error) {
-	parts := strings.SplitN(val, ":", 4)
-	if len(parts) != 4 {
+	parts := strings.SplitN(val, ":", 6)
+	if len(parts) != 6 {
 		return Tick{}, fmt.Errorf("invalid tick format: %s", val)
 	}
 	bid, _ := strconv.ParseFloat(parts[0], 64)
-	ask, _ := strconv.ParseFloat(parts[1], 64)
-	last, _ := strconv.ParseFloat(parts[2], 64)
-	volume, _ := strconv.ParseFloat(parts[3], 64)
-	return Tick{Bid: bid, Ask: ask, Last: last, Volume: volume}, nil
+	bidVol, _ := strconv.ParseFloat(parts[1], 64)
+	ask, _ := strconv.ParseFloat(parts[2], 64)
+	askVol, _ := strconv.ParseFloat(parts[3], 64)
+	last, _ := strconv.ParseFloat(parts[4], 64)
+	volume, _ := strconv.ParseFloat(parts[5], 64)
+	return Tick{Bid: bid, BidVolume: bidVol, Ask: ask, AskVolume: askVol, Last: last, Volume: volume}, nil
 }
 
 func stdDev(variance float64) float64 {
