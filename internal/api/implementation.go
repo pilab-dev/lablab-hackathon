@@ -4,6 +4,7 @@ package api
 
 import (
 	"net/http"
+	"net/url"
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
@@ -63,29 +64,32 @@ func (s *Server) AddSubscription(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "symbol is required"})
 		return
 	}
-	wsSymbol := s.collector.FormatSymbol(req.Symbol)
-	ok := s.collector.AddSubscription(wsSymbol)
+	ok := s.collector.AddSubscription(req.Symbol)
 	if !ok {
 		c.JSON(http.StatusConflict, gin.H{"error": "symbol already subscribed"})
 		return
 	}
 	s.collector.RestartWebSocket()
-	c.JSON(http.StatusOK, gin.H{"status": "subscribed", "symbol": wsSymbol})
+	c.JSON(http.StatusOK, gin.H{"status": "subscribed", "symbol": req.Symbol})
 }
 
-func (s *Server) RemoveSubscription(c *gin.Context, symbol string) {
-	if symbol == "" {
+func (s *Server) DeleteSubscription(c *gin.Context) {
+	var req DeleteSubscriptionJSONBody
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+	if req.Symbol == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "symbol is required"})
 		return
 	}
-	wsSymbol := s.collector.FormatSymbol(symbol)
-	ok := s.collector.RemoveSubscription(wsSymbol)
+	ok := s.collector.RemoveSubscription(req.Symbol)
 	if !ok {
 		c.JSON(http.StatusNotFound, gin.H{"error": "symbol not found"})
 		return
 	}
 	s.collector.RestartWebSocket()
-	c.JSON(http.StatusOK, gin.H{"status": "unsubscribed", "symbol": wsSymbol})
+	c.JSON(http.StatusOK, gin.H{"status": "unsubscribed", "symbol": req.Symbol})
 }
 
 func (s *Server) ListSubscriptionsDetail(c *gin.Context) {
@@ -205,7 +209,24 @@ func (s *Server) GetAssets(c *gin.Context, params GetAssetsParams) {
 	c.JSON(http.StatusOK, gin.H{"assets": result, "count": len(result)})
 }
 
+func (s *Server) GetPairs(c *gin.Context) {
+	pairs := s.collector.GetAvailablePairs()
+	result := make([]TradingPair, 0, len(pairs))
+	for _, p := range pairs {
+		sym := p.Symbol
+		alt := p.Altname
+		ws := p.WsName
+		result = append(result, TradingPair{
+			Symbol:  &sym,
+			Altname: &alt,
+			WsName:  &ws,
+		})
+	}
+	c.JSON(http.StatusOK, gin.H{"pairs": result, "count": len(result)})
+}
+
 func (s *Server) GetTicker(c *gin.Context, symbol string) {
+	symbol, _ = url.QueryUnescape(symbol)
 	pair := s.collector.FormatSymbol(symbol)
 	state, ok := s.stateMgr.GetMarketSnapshot(pair)
 	if !ok {

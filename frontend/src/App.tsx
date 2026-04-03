@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom';
+import { HashRouter, Routes, Route, NavLink } from 'react-router-dom';
 import {
   Box,
   AppBar,
@@ -48,7 +48,7 @@ const navItems = [
 
 export default function App() {
   return (
-    <BrowserRouter>
+    <HashRouter>
       <Box sx={{ display: 'flex' }}>
         <AppBar position="fixed" sx={{ zIndex: (theme) => theme.zIndex.drawer + 1 }}>
           <Toolbar>
@@ -98,6 +98,6 @@ export default function App() {
           </Container>
         </Box>
       </Box>
-    </BrowserRouter>
+    </HashRouter>
   );
 }

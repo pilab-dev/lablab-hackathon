@@ -90,6 +90,18 @@ type TickerData struct {
 	Volume    *float32   `json:"volume,omitempty"`
 }
 
+// TradingPair defines model for TradingPair.
+type TradingPair struct {
+	// Altname Alternative name (e.g., XBT/USD)
+	Altname *string `json:"altname,omitempty"`
+
+	// Symbol Trading pair symbol (e.g., BTCUSD)
+	Symbol *string `json:"symbol,omitempty"`
+
+	// WsName WebSocket pair name (e.g., BTC/USD)
+	WsName *string `json:"ws_name,omitempty"`
+}
+
 // GetAssetsParams defines parameters for GetAssets.
 type GetAssetsParams struct {
 	EnabledOnly *bool `form:"enabled_only,omitempty" json:"enabled_only,omitempty"`
@@ -113,11 +125,19 @@ type AddSubscriptionJSONBody struct {
 	Symbol string `json:"symbol"`
 }
 
+// DeleteSubscriptionJSONBody defines parameters for DeleteSubscription.
+type DeleteSubscriptionJSONBody struct {
+	Symbol string `json:"symbol"`
+}
+
 // SetLogLevelJSONRequestBody defines body for SetLogLevel for application/json ContentType.
 type SetLogLevelJSONRequestBody SetLogLevelJSONBody
 
 // AddSubscriptionJSONRequestBody defines body for AddSubscription for application/json ContentType.
 type AddSubscriptionJSONRequestBody AddSubscriptionJSONBody
+
+// DeleteSubscriptionJSONRequestBody defines body for DeleteSubscription for application/json ContentType.
+type DeleteSubscriptionJSONRequestBody DeleteSubscriptionJSONBody
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
@@ -133,6 +153,9 @@ type ServerInterface interface {
 	// Set console log level
 	// (POST /loglevel)
 	SetLogLevel(c *gin.Context)
+	// Get available trading pairs for subscriptions
+	// (GET /pairs)
+	GetPairs(c *gin.Context)
 	// List recent prompts
 	// (GET /prompts)
 	ListPrompts(c *gin.Context, params ListPromptsParams)
@@ -142,12 +165,12 @@ type ServerInterface interface {
 	// Add a new subscription
 	// (POST /subscriptions)
 	AddSubscription(c *gin.Context)
+	// Remove a subscription
+	// (POST /subscriptions/delete)
+	DeleteSubscription(c *gin.Context)
 	// List subscriptions with detail
 	// (GET /subscriptions/detail)
 	ListSubscriptionsDetail(c *gin.Context)
-	// Remove a subscription
-	// (DELETE /subscriptions/{symbol})
-	RemoveSubscription(c *gin.Context, symbol string)
 	// Get current ticker for a symbol
 	// (GET /ticker/{symbol})
 	GetTicker(c *gin.Context, symbol string)
@@ -227,6 +250,19 @@ func (siw *ServerInterfaceWrapper) SetLogLevel(c *gin.Context) {
 	siw.Handler.SetLogLevel(c)
 }
 
+// GetPairs operation middleware
+func (siw *ServerInterfaceWrapper) GetPairs(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetPairs(c)
+}
+
 // ListPrompts operation middleware
 func (siw *ServerInterfaceWrapper) ListPrompts(c *gin.Context) {
 
@@ -279,6 +315,19 @@ func (siw *ServerInterfaceWrapper) AddSubscription(c *gin.Context) {
 	siw.Handler.AddSubscription(c)
 }
 
+// DeleteSubscription operation middleware
+func (siw *ServerInterfaceWrapper) DeleteSubscription(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.DeleteSubscription(c)
+}
+
 // ListSubscriptionsDetail operation middleware
 func (siw *ServerInterfaceWrapper) ListSubscriptionsDetail(c *gin.Context) {
 
@@ -290,30 +339,6 @@ func (siw *ServerInterfaceWrapper) ListSubscriptionsDetail(c *gin.Context) {
 	}
 
 	siw.Handler.ListSubscriptionsDetail(c)
-}
-
-// RemoveSubscription operation middleware
-func (siw *ServerInterfaceWrapper) RemoveSubscription(c *gin.Context) {
-
-	var err error
-
-	// ------------- Path parameter "symbol" -------------
-	var symbol string
-
-	err = runtime.BindStyledParameterWithOptions("simple", "symbol", c.Param("symbol"), &symbol, runtime.BindStyledParameterOptions{Explode: false, Required: true, Type: "string", Format: ""})
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter symbol: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		middleware(c)
-		if c.IsAborted() {
-			return
-		}
-	}
-
-	siw.Handler.RemoveSubscription(c, symbol)
 }
 
 // GetTicker operation middleware
@@ -371,36 +396,39 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.GET(options.BaseURL+"/health", wrapper.GetHealth)
 	router.GET(options.BaseURL+"/loglevel", wrapper.GetLogLevel)
 	router.POST(options.BaseURL+"/loglevel", wrapper.SetLogLevel)
+	router.GET(options.BaseURL+"/pairs", wrapper.GetPairs)
 	router.GET(options.BaseURL+"/prompts", wrapper.ListPrompts)
 	router.GET(options.BaseURL+"/subscriptions", wrapper.ListSubscriptions)
 	router.POST(options.BaseURL+"/subscriptions", wrapper.AddSubscription)
+	router.POST(options.BaseURL+"/subscriptions/delete", wrapper.DeleteSubscription)
 	router.GET(options.BaseURL+"/subscriptions/detail", wrapper.ListSubscriptionsDetail)
-	router.DELETE(options.BaseURL+"/subscriptions/:symbol", wrapper.RemoveSubscription)
 	router.GET(options.BaseURL+"/ticker/:symbol", wrapper.GetTicker)
 }
 
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"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",
+	"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",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

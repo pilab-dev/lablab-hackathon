@@ -147,19 +147,8 @@ func runRun(cmd *cobra.Command, args []string) error {
 	router := gin.Default()
 
 	// API routes group with /api prefix
-	apiGroup := router.Group("/api")
 	apiServer := api.NewServer(collector, engine, krakenClient, stateMgr)
-	api.RegisterHandlersWithOptions(apiGroup, apiServer, api.GinServerOptions{})
-
-	// Debug route to test
-	apiGroup.GET("/test-assets", func(c *gin.Context) {
-		assets, err := krakenClient.GetAssets(c.Request.Context())
-		if err != nil {
-			c.JSON(500, gin.H{"error": err.Error()})
-			return
-		}
-		c.JSON(200, gin.H{"assets": assets, "count": len(assets)})
-	})
+	api.RegisterHandlersWithOptions(router, apiServer, api.GinServerOptions{BaseURL: "/api"})
 
 	// Serve embedded OpenAPI spec and Swagger UI
 	router.GET("/api/openapi.json", func(c *gin.Context) {
@@ -202,13 +191,25 @@ func runRun(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		log.Warn().Err(err).Msg("Frontend not embedded, skipping static serving")
 	} else {
-		router.NoRoute(func(c *gin.Context) {
-			path := c.Request.URL.Path
-			if _, err := frontendContent.Open(path); err == nil {
-				http.FileServer(http.FS(frontendContent)).ServeHTTP(c.Writer, c.Request)
+		indexHTML, err := fs.ReadFile(frontendContent, "index.html")
+		if err != nil {
+			log.Warn().Err(err).Msg("index.html not found in embedded frontend")
+		}
+		router.GET("/", func(c *gin.Context) {
+			if len(indexHTML) > 0 {
+				c.Data(http.StatusOK, "text/html; charset=utf-8", indexHTML)
 			} else {
-				http.FileServer(http.FS(frontendContent)).ServeHTTP(c.Writer, c.Request)
+				c.JSON(http.StatusNotFound, gin.H{"error": "frontend not available"})
 			}
+		})
+		router.GET("/assets/*filepath", func(c *gin.Context) {
+			c.FileFromFS(c.Request.URL.Path, http.FS(frontendContent))
+		})
+		router.GET("/favicon.svg", func(c *gin.Context) {
+			c.FileFromFS("/favicon.svg", http.FS(frontendContent))
+		})
+		router.GET("/icons.svg", func(c *gin.Context) {
+			c.FileFromFS("/icons.svg", http.FS(frontendContent))
 		})
 	}
 

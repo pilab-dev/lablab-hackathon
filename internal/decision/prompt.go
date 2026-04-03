@@ -42,7 +42,7 @@ var FewShotExamples = []struct {
 		Content: "Market: BTCUSD $67k (+2% 1h). PRISM: Strong Momentum. News: 'Institutional adoption spikes'.",
 	},
 	{
-		Role: "assistant",
+		Role:    "assistant",
 		Content: `{"decisions": [{"pair": "BTCUSD", "action": "buy", "size_pct": 10.0, "confidence": 0.95, "reasoning": "Strong upward momentum and bullish institutional news provide a high-conviction entry."}]}`,
 	},
 	{
@@ -50,7 +50,7 @@ var FewShotExamples = []struct {
 		Content: "Market: ETHUSD $3400 (-0.5% 1h). PRISM: Neutral. News: Mixed sentiment.",
 	},
 	{
-		Role: "assistant",
+		Role:    "assistant",
 		Content: `{"decisions": [{"pair": "ETHUSD", "action": "hold", "size_pct": 0.0, "confidence": 0.80, "reasoning": "Market is consolidating with neutral signals; waiting for clear direction."}]}`,
 	},
 }

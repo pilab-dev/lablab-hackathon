@@ -60,7 +60,7 @@ func NewMemoryManager() *MemoryManager {
 	}
 }
 
-// UpdateTick updates the live price from a WebSocket stream in microseconds
+// UpdateTick updates the live price from a WebSocket stream
 func (m *MemoryManager) UpdateTick(pair string, bid, ask, last float64) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

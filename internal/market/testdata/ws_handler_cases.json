@@ -1,0 +1,42 @@
+[
+  {
+    "name": "subscribe_success_adds_subscription",
+    "input": "{\"method\":\"subscribe\",\"result\":{\"channel\":\"ticker\",\"symbol\":\"BTC/USD\"},\"success\":true}\n",
+    "pre_subscriptions": {},
+    "expect_is_subscribed": {
+      "BTC/USD": true
+    }
+  },
+  {
+    "name": "subscribe_failure_removes_subscription",
+    "input": "{\"method\":\"subscribe\",\"result\":{\"channel\":\"ticker\",\"symbol\":\"BTC/USD\"},\"success\":false}\n",
+    "pre_subscriptions": {
+      "BTC/USD": true
+    },
+    "expect_is_subscribed": {
+      "BTC/USD": false
+    }
+  },
+  {
+    "name": "ticker_update_updates_state_pair_without_slash",
+    "input": "{\"channel\":\"ticker\",\"type\":\"update\",\"data\":[{\"symbol\":\"BTC/USD\",\"bid\":67234.0,\"ask\":67234.1,\"last\":67234.1,\"volume\":1234.56}]}\n",
+    "pre_subscriptions": {},
+    "expect_tick": {
+      "pair": "BTCUSD",
+      "bid": 67234.0,
+      "ask": 67234.1,
+      "last": 67234.1
+    }
+  },
+  {
+    "name": "status_message_does_not_panic",
+    "input": "{\"channel\":\"status\",\"type\":\"update\",\"data\":[{\"api_version\":\"v2\",\"connection_id\":1,\"system\":\"online\",\"version\":\"2.0.10\"}]}\n",
+    "pre_subscriptions": {}
+  },
+  {
+    "name": "invalid_json_does_not_panic",
+    "input": "not json\n",
+    "pre_subscriptions": {}
+  }
+]
+

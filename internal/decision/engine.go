@@ -10,6 +10,7 @@ import (
 
 	"github.com/rs/zerolog/log"
 	"kraken-trader/internal/news"
+	"kraken-trader/internal/repository"
 	"kraken-trader/internal/state"
 )
 
@@ -34,10 +35,11 @@ type Engine struct {
 	chromaClient *news.ChromaClient
 	embedder     *news.Embedder
 	httpClient   *http.Client
+	repo         repository.Repository
 }
 
 // NewEngine creates a new Llama-based decision engine
-func NewEngine(ollamaURL, model string, stateMgr *state.MemoryManager, chroma *news.ChromaClient, embedder *news.Embedder) *Engine {
+func NewEngine(ollamaURL, model string, stateMgr *state.MemoryManager, chroma *news.ChromaClient, embedder *news.Embedder, repo repository.Repository) *Engine {
 	if ollamaURL == "" {
 		ollamaURL = "http://localhost:11434"
 	}
@@ -50,8 +52,9 @@ func NewEngine(ollamaURL, model string, stateMgr *state.MemoryManager, chroma *n
 		stateMgr:     stateMgr,
 		chromaClient: chroma,
 		embedder:     embedder,
+		repo:         repo,
 		httpClient: &http.Client{
-			Timeout: 60 * time.Second, // LLM inference can take time on local hardware
+			Timeout: 60 * time.Second,
 		},
 	}
 }
@@ -102,20 +105,18 @@ func (e *Engine) callOllama(ctx context.Context, userPrompt string) ([]TradeDeci
 	messages := []message{
 		{Role: "system", Content: SystemPrompt},
 	}
-	// Add Few-Shot Examples
 	for _, ex := range FewShotExamples {
 		messages = append(messages, message{Role: ex.Role, Content: ex.Content})
 	}
-	// Add Dynamic User Prompt
 	messages = append(messages, message{Role: "user", Content: userPrompt})
 
 	reqBody := map[string]interface{}{
 		"model":    e.model,
 		"messages": messages,
 		"stream":   false,
-		"format":   "json", // Force JSON mode
+		"format":   "json",
 		"options": map[string]interface{}{
-			"temperature": 0.1, // Keep it deterministic for trading
+			"temperature": 0.1,
 		},
 	}
 
@@ -150,7 +151,6 @@ func (e *Engine) callOllama(ctx context.Context, userPrompt string) ([]TradeDeci
 		return nil, fmt.Errorf("failed to decode ollama response: %w", err)
 	}
 
-	// 5. Parse JSON Decisions
 	var result llmResponse
 	if err := json.Unmarshal([]byte(ollamaResp.Message.Content), &result); err != nil {
 		preview := ollamaResp.Message.Content
@@ -161,5 +161,30 @@ func (e *Engine) callOllama(ctx context.Context, userPrompt string) ([]TradeDeci
 		return nil, fmt.Errorf("failed to parse LLM decisions JSON: %w", err)
 	}
 
+	if e.repo != nil {
+		rawPrompt, _ := json.Marshal(messages)
+		for _, d := range result.Decisions {
+			rec := repository.PromptRecord{
+				Type:       "decision",
+				Pair:       d.Pair,
+				RawPrompt:  string(rawPrompt),
+				RawAnswer:  ollamaResp.Message.Content,
+				Answer:     ollamaResp.Message.Content,
+				Action:     d.Action,
+				SizePct:    d.SizePct,
+				Confidence: d.Confidence,
+				Success:    true,
+			}
+			_ = e.repo.SavePrompt(ctx, rec)
+		}
+	}
+
 	return result.Decisions, nil
+}
+
+func (e *Engine) GetPrompts(ctx context.Context, limit int) ([]repository.PromptRecord, error) {
+	if e.repo == nil {
+		return nil, nil
+	}
+	return e.repo.GetPromptsList(ctx, limit)
 }
