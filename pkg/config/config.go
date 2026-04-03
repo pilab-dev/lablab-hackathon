@@ -19,10 +19,13 @@ type Config struct {
 	ConfidenceThreshold float64       `mapstructure:"CONFIDENCE_THRESHOLD"`
 	TradeCooldown       time.Duration `mapstructure:"TRADE_COOLDOWN"`
 
-	// Ollama Configuration
+	// LLM Configuration
+	LLMProvider      string `mapstructure:"LLM_PROVIDER"`
+	LLMModel         string `mapstructure:"LLM_MODEL"`
 	OllamaURL        string `mapstructure:"OLLAMA_URL"`
 	OllamaModel      string `mapstructure:"OLLAMA_MODEL"`
 	OllamaEmbedModel string `mapstructure:"OLLAMA_EMBED_MODEL"`
+	LMStudioURL      string `mapstructure:"LMSTUDIO_URL"`
 
 	// InfluxDB Configuration
 	InfluxDBURL    string `mapstructure:"INFLUXDB_URL"`
@@ -84,15 +87,21 @@ func LoadConfig(configPath string) (*Config, error) {
 	return &cfg, nil
 }
 
-// setDefaults sets default values for configuration
+// setDefaults registers the application's default configuration values on the provided viper instance.
+// It populates sensible defaults for trading, LLM (and Ollama/LMStudio), InfluxDB, ChromaDB, NATS, dashboard/API ports,
+// SQLite path, logging level, and Redis so they can be overridden by a config file or environment variables.
+// v is the viper instance to populate with those defaults.
 func setDefaults(v *viper.Viper) {
 	v.SetDefault("TRADING_MODE", "paper")
 	v.SetDefault("TRADE_INTERVAL", "30s")
 	v.SetDefault("CONFIDENCE_THRESHOLD", 0.6)
 	v.SetDefault("TRADE_COOLDOWN", "60s")
+	v.SetDefault("LLM_PROVIDER", "ollama")
+	v.SetDefault("LLM_MODEL", "llama3.1:8b")
 	v.SetDefault("OLLAMA_URL", "http://localhost:11434")
 	v.SetDefault("OLLAMA_MODEL", "llama3.1:8b")
 	v.SetDefault("OLLAMA_EMBED_MODEL", "nomic-embed-text")
+	v.SetDefault("LMSTUDIO_URL", "http://localhost:1234")
 	v.SetDefault("INFLUXDB_URL", "http://localhost:8086")
 	v.SetDefault("INFLUXDB_TOKEN", "admin123")
 	v.SetDefault("INFLUXDB_ORG", "kraken-trader")

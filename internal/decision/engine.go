@@ -26,7 +26,8 @@ type TradeDecision struct {
 
 // Engine is the brain of the bot, powered by Llama 3.1
 type Engine struct {
-	ollamaURL    string
+	provider     string
+	baseURL      string
 	model        string
 	stateMgr     *state.MemoryManager
 	chromaClient *news.ChromaClient
@@ -36,16 +37,29 @@ type Engine struct {
 	featEngine   *features.FeatureEngine
 }
 
-// NewEngine creates a new Llama-based decision engine
-func NewEngine(ollamaURL, model string, stateMgr *state.MemoryManager, chroma *news.ChromaClient, embedder *news.Embedder, repo repository.Repository, featEngine *features.FeatureEngine) *Engine {
-	if ollamaURL == "" {
-		ollamaURL = "http://localhost:11434"
+// NewEngine creates an Engine configured to call a local LLM provider and wires its dependencies.
+// If `provider` is empty it defaults to "ollama". If `baseURL` is empty it defaults to
+// "http://localhost:11434" for the "ollama" provider and "http://localhost:1234" otherwise.
+// If `model` is empty it defaults to "llama3.1:8b". The returned Engine holds the provided
+// state manager, Chroma client, embedder, repository, feature engine, and an HTTP client
+// with a 60 second timeout.
+func NewEngine(provider, baseURL, model string, stateMgr *state.MemoryManager, chroma *news.ChromaClient, embedder *news.Embedder, repo repository.Repository, featEngine *features.FeatureEngine) *Engine {
+	if provider == "" {
+		provider = "ollama"
+	}
+	if baseURL == "" {
+		if provider == "ollama" {
+			baseURL = "http://localhost:11434"
+		} else {
+			baseURL = "http://localhost:1234"
+		}
 	}
 	if model == "" {
 		model = "llama3.1:8b"
 	}
 	return &Engine{
-		ollamaURL:    ollamaURL,
+		provider:     provider,
+		baseURL:      baseURL,
 		model:        model,
 		stateMgr:     stateMgr,
 		chromaClient: chroma,
@@ -128,7 +142,13 @@ func (e *Engine) Decide(ctx context.Context, pairs []string) ([]TradeDecision, e
 			continue
 		}
 
-		decisions, err := e.callOllama(ctx, pair, userPrompt)
+		var decisions []TradeDecision
+		if e.provider == "lmstudio" {
+			decisions, err = e.callLMStudio(ctx, pair, userPrompt)
+		} else {
+			decisions, err = e.callOllama(ctx, pair, userPrompt)
+		}
+
 		if err != nil {
 			log.Error().Err(err).Str("pair", pair).Msg("LLM decision failed")
 			continue
@@ -166,7 +186,7 @@ func (e *Engine) callOllama(ctx context.Context, pair string, userPrompt string)
 		return nil, err
 	}
 
-	url := fmt.Sprintf("%s/api/chat", e.ollamaURL)
+	url := fmt.Sprintf("%s/api/chat", e.baseURL)
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, err
@@ -192,13 +212,78 @@ func (e *Engine) callOllama(ctx context.Context, pair string, userPrompt string)
 		return nil, fmt.Errorf("failed to decode ollama response: %w", err)
 	}
 
+	return e.processLLMResponse(ctx, pair, messages, ollamaResp.Message.Content)
+}
+
+func (e *Engine) callLMStudio(ctx context.Context, pair string, userPrompt string) ([]TradeDecision, error) {
+	type message struct {
+		Role    string `json:"role"`
+		Content string `json:"content"`
+	}
+
+	messages := []message{
+		{Role: "system", Content: SystemPrompt},
+	}
+	messages = append(messages, message{Role: "user", Content: userPrompt})
+
+	reqBody := map[string]interface{}{
+		"model":    e.model,
+		"messages": messages,
+		"stream":   false,
+		"response_format": map[string]interface{}{
+			"type": "json_object",
+		},
+		"temperature": 0.1,
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, err
+	}
+
+	url := fmt.Sprintf("%s/v1/chat/completions", e.baseURL)
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := e.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("lmstudio chat request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("lmstudio returned status %d", resp.StatusCode)
+	}
+
+	var lmsResp struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&lmsResp); err != nil {
+		return nil, fmt.Errorf("failed to decode lmstudio response: %w", err)
+	}
+
+	if len(lmsResp.Choices) == 0 {
+		return nil, fmt.Errorf("lmstudio returned no choices")
+	}
+
+	return e.processLLMResponse(ctx, pair, messages, lmsResp.Choices[0].Message.Content)
+}
+
+func (e *Engine) processLLMResponse(ctx context.Context, pair string, messages interface{}, content string) ([]TradeDecision, error) {
 	var llmOut LLMOutput
-	if err := json.Unmarshal([]byte(ollamaResp.Message.Content), &llmOut); err != nil {
-		preview := ollamaResp.Message.Content
+	if err := json.Unmarshal([]byte(content), &llmOut); err != nil {
+		preview := content
 		if len(preview) > 100 {
 			preview = preview[:100] + "..."
 		}
-		log.Debug().Str("raw_output_preview", preview).Int("raw_output_length", len(ollamaResp.Message.Content)).Msg("Raw LLM output")
+		log.Debug().Str("raw_output_preview", preview).Int("raw_output_length", len(content)).Msg("Raw LLM output")
 		return nil, fmt.Errorf("failed to parse LLM decisions JSON: %w", err)
 	}
 
@@ -221,10 +306,6 @@ func (e *Engine) callOllama(ctx context.Context, pair string, userPrompt string)
 
 	decisions := []TradeDecision{}
 	if llmOut.Action != "" {
-		_ = llmOut.EntryPrice
-		_ = llmOut.StopLoss
-		_ = llmOut.TakeProfit
-
 		decisions = append(decisions, TradeDecision{
 			Pair:       pair,
 			Action:     llmOut.Action,
@@ -239,8 +320,8 @@ func (e *Engine) callOllama(ctx context.Context, pair string, userPrompt string)
 				Type:       "decision",
 				Pair:       pair,
 				RawPrompt:  string(rawPrompt),
-				RawAnswer:  ollamaResp.Message.Content,
-				Answer:     ollamaResp.Message.Content,
+				RawAnswer:  content,
+				Answer:     content,
 				Action:     llmOut.Action,
 				SizePct:    sizePct,
 				Confidence: llmOut.Confidence,

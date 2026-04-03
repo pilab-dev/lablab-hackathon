@@ -41,6 +41,12 @@ import (
 //go:embed frontend/dist
 var frontendFS embed.FS
 
+// runRun boots the trading service by loading configuration, initializing external clients
+// and in-memory state, starting background workers (market collector, pollers, decision loop,
+// consumers) and the HTTP API, and performing a graceful shutdown when a termination signal is received.
+//
+// It returns an error if configuration loading fails; runtime errors for initialized components
+// are logged but not returned.
 func runRun(cmd *cobra.Command, args []string) error {
 	// Load configuration
 	cfg, err := config.LoadConfig(configPath)
@@ -127,9 +133,17 @@ func runRun(cmd *cobra.Command, args []string) error {
 	}
 
 	// Decision Engine
+	var llmBaseURL string
+	if cfg.LLMProvider == "lmstudio" {
+		llmBaseURL = cfg.LMStudioURL
+	} else {
+		llmBaseURL = cfg.OllamaURL
+	}
+
 	engine := decision.NewEngine(
-		cfg.OllamaURL,
-		cfg.OllamaModel,
+		cfg.LLMProvider,
+		llmBaseURL,
+		cfg.LLMModel,
 		stateMgr,
 		chromaClient,
 		embedder,
