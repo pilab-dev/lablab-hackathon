@@ -11,30 +11,33 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
-  TextField,
   CircularProgress,
   Alert,
+  Autocomplete,
+  TextField,
 } from '@mui/material';
 import { Add as AddIcon, Delete as DeleteIcon } from '@mui/icons-material';
 import {
   useSubscriptionDetails,
   useAddSubscription,
   useRemoveSubscription,
+  usePairs,
 } from '../hooks/useApi';
 
 export function SubscriptionsPage() {
   const { data, isLoading, error } = useSubscriptionDetails();
+  const { data: pairsData } = usePairs();
   const addMutation = useAddSubscription();
   const removeMutation = useRemoveSubscription();
   const [open, setOpen] = useState(false);
-  const [symbol, setSymbol] = useState('');
+  const [selectedPair, setSelectedPair] = useState<string | null>(null);
 
   const handleAdd = () => {
-    if (symbol.trim()) {
-      addMutation.mutate(symbol.trim(), {
+    if (selectedPair) {
+      addMutation.mutate(selectedPair, {
         onSuccess: () => {
           setOpen(false);
-          setSymbol('');
+          setSelectedPair(null);
         },
       });
     }
@@ -45,6 +48,8 @@ export function SubscriptionsPage() {
       removeMutation.mutate(sym);
     }
   };
+
+  const pairs = pairsData?.pairs?.map(p => p.symbol || p.altname || p.ws_name || '') || [];
 
   return (
     <Box>
@@ -98,25 +103,30 @@ export function SubscriptionsPage() {
         </Box>
       )}
 
-      <Dialog open={open} onClose={() => setOpen(false)}>
+      <Dialog open={open} onClose={() => setOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>Add Subscription</DialogTitle>
         <DialogContent>
-          <TextField
-            autoFocus
-            margin="dense"
-            label="Symbol"
-            placeholder="e.g., BTC/USD, ETH/USD"
-            fullWidth
-            value={symbol}
-            onChange={(e) => setSymbol(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
+          <Autocomplete
+            options={pairs}
+            value={selectedPair}
+            onChange={(_, value) => setSelectedPair(value)}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                autoFocus
+                margin="dense"
+                label="Trading Pair"
+                placeholder="Select a pair..."
+                fullWidth
+              />
+            )}
           />
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setOpen(false)}>Cancel</Button>
           <Button
             onClick={handleAdd}
-            disabled={addMutation.isPending || !symbol.trim()}
+            disabled={addMutation.isPending || !selectedPair}
             variant="contained"
           >
             {addMutation.isPending ? <CircularProgress size={20} /> : 'Add'}

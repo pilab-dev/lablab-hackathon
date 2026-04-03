@@ -82,7 +82,7 @@ func (e *Embedder) GenerateEmbedding(ctx context.Context, text string) ([]float3
 // BatchEmbed takes a slice of articles and embeds their content
 func (e *Embedder) BatchEmbed(ctx context.Context, articles []NewsArticle) ([][]float32, error) {
 	var embeddings [][]float32
-	
+
 	// We do this sequentially to avoid overloading the local M4 Mac with too many concurrent model calls.
 	for _, article := range articles {
 		// Embed the title and summary together for better semantic meaning
@@ -93,6 +93,6 @@ func (e *Embedder) BatchEmbed(ctx context.Context, articles []NewsArticle) ([][]
 		}
 		embeddings = append(embeddings, emb)
 	}
-	
+
 	return embeddings, nil
 }

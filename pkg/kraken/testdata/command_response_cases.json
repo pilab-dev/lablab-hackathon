@@ -1,0 +1,213 @@
+[
+  {
+    "name": "runraw_error_envelope_is_surface_as_error",
+    "fn": "run_raw",
+    "stdout": "{\"error\":\"rate_limit\",\"message\":\"API rate limit exceeded\"}\n",
+    "stderr": "",
+    "exit_code": 1,
+    "expect_error_contains": "kraken-cli error [rate_limit]: API rate limit exceeded"
+  },
+  {
+    "name": "runraw_error_envelope_with_zero_exit_code",
+    "fn": "run_raw",
+    "stdout": "{\"error\":\"auth_failed\",\"message\":\"Invalid API key\"}\n",
+    "stderr": "",
+    "exit_code": 0,
+    "expect_error_contains": "kraken-cli error [auth_failed]"
+  },
+  {
+    "name": "runraw_non_json_failure_includes_stderr",
+    "fn": "run_raw",
+    "stdout": "something went wrong\n",
+    "stderr": "boom\n",
+    "exit_code": 1,
+    "expect_error_contains": "command execution failed"
+  },
+  {
+    "name": "runraw_empty_stdout_with_error",
+    "fn": "run_raw",
+    "stdout": "",
+    "stderr": "binary not found",
+    "exit_code": 127,
+    "expect_error_contains": "command execution failed"
+  },
+  {
+    "name": "run_success_unmarshals_json",
+    "fn": "run",
+    "stdout": "{\"ok\":true,\"value\":123}\n",
+    "stderr": "",
+    "exit_code": 0,
+    "expect_map": {
+      "ok": true,
+      "value": 123
+    }
+  },
+  {
+    "name": "run_success_unmarshals_nested_object",
+    "fn": "run",
+    "stdout": "{\"result\":{\"ZUSD\":{\"a\":\"67234.1\",\"b\":\"67234.0\",\"c\":[\"0.010\",\"67234.1\"]}}}\n",
+    "stderr": "",
+    "exit_code": 0,
+    "expect_map": {
+      "result": {
+        "ZUSD": {
+          "a": "67234.1"
+        }
+      }
+    }
+  },
+  {
+    "name": "run_invalid_json_returns_parse_error_with_raw_output",
+    "fn": "run",
+    "stdout": "{\"ok\":\n",
+    "stderr": "",
+    "exit_code": 0,
+    "expect_error_contains": "failed to parse kraken-cli json response"
+  },
+  {
+    "name": "run_empty_response",
+    "fn": "run",
+    "stdout": "\n",
+    "stderr": "",
+    "exit_code": 0,
+    "expect_error_contains": "failed to parse"
+  },
+  {
+    "name": "getbalance_success_returns_map",
+    "fn": "run",
+    "stdout": "{\"error\":[],\"result\":{\"ZUSD\":1234.56,\"XXBT\":0.5}}\n",
+    "stderr": "",
+    "exit_code": 0,
+    "expect_map": {
+      "error": [],
+      "result": {
+        "ZUSD": 1234.56
+      }
+    }
+  },
+  {
+    "name": "getbalance_error_in_result",
+    "fn": "run",
+    "stdout": "{\"error\":\"Not enough funds\",\"result\":{}}\n",
+    "stderr": "",
+    "exit_code": 0,
+    "expect_error_contains": "kraken-cli error [Not enough funds]"
+  },
+  {
+    "name": "getassets_parses_asset_map",
+    "fn": "run",
+    "stdout": "{\"XXBT\":{\"aclass\":\"currency\",\"altname\":\"BTC\",\"decimals\":10,\"display_decimals\":8},\"ZUSD\":{\"aclass\":\"currency\",\"altname\":\"USD\",\"decimals\":4,\"display_decimals\":2}}\n",
+    "stderr": "",
+    "exit_code": 0,
+    "expect_map": {
+      "XXBT": {
+        "altname": "BTC"
+      }
+    }
+  },
+  {
+    "name": "getpairs_parses_pair_map",
+    "fn": "run",
+    "stdout": "{\"XBT/USD\":{\"altname\":\"XBT/USD\",\"wsname\":\"XBT/USD\",\"pair_decimals\":1},\"ETH/USD\":{\"altname\":\"ETH/USD\",\"wsname\":\"ETH/USD\",\"pair_decimals\":2}}\n",
+    "stderr": "",
+    "exit_code": 0,
+    "expect_map": {
+      "XBT/USD": {
+        "wsname": "XBT/USD"
+      }
+    }
+  },
+  {
+    "name": "orderbuy_success_returns_txid",
+    "fn": "run",
+    "stdout": "{\"error\":[],\"result\":{\"txid\":\"OXXXXX\",\"descr\":\"buy 0.01 XBTUSD @ limit 50000.0\"}}\n",
+    "stderr": "",
+    "exit_code": 0,
+    "expect_map": {
+      "result": {
+        "txid": "OXXXXX"
+      }
+    }
+  },
+  {
+    "name": "orderbuy_market_order",
+    "fn": "run",
+    "stdout": "{\"error\":[],\"result\":{\"txid\":\"OYYYYY\",\"descr\":\"buy 0.1 ETHUSD @ market\"}}\n",
+    "stderr": "",
+    "exit_code": 0,
+    "expect_map": {
+      "result": {
+        "txid": "OYYYYY"
+      }
+    }
+  },
+  {
+    "name": "ordersell_with_error",
+    "fn": "run",
+    "stdout": "{\"error\":\"Insufficient funds\",\"result\":{}}\n",
+    "stderr": "",
+    "exit_code": 0,
+    "expect_error_contains": "kraken-cli error [Insufficient funds]"
+  },
+  {
+    "name": "orderamend_success",
+    "fn": "run",
+    "stdout": "{\"error\":[],\"result\":{\"txid\":\"OXXXXX\",\"descr\":\"buy 0.02 XBTUSD @ limit 51000.0\"}}\n",
+    "stderr": "",
+    "exit_code": 0,
+    "expect_map": {
+      "result": {
+        "txid": "OXXXXX"
+      }
+    }
+  },
+  {
+    "name": "orderedit_success",
+    "fn": "run",
+    "stdout": "{\"error\":[],\"result\":{\"txid\":\"OXXXXX\",\"descr\":\"buy 0.01 XBTUSD @ limit 52000.0\",\"originaltxid\":\"OAAAAA\"}}\n",
+    "stderr": "",
+    "exit_code": 0,
+    "expect_map": {
+      "result": {
+        "txid": "OXXXXX"
+      }
+    }
+  },
+  {
+    "name": "ordercancel_success",
+    "fn": "run",
+    "stdout": "{\"error\":[],\"result\":{\"txid\":\"OCANCEL\",\"descr\":\"cancel order\",\"canceledOrders\":[\"OAAAAA\"]}}\n",
+    "stderr": "",
+    "exit_code": 0,
+    "expect_map": {
+      "result": {
+        "txid": "OCANCEL"
+      }
+    }
+  },
+  {
+    "name": "ordercancelall_success",
+    "fn": "run",
+    "stdout": "{\"error\":[],\"result\":{\"txid\":\"OCANCELALL\",\"descr\":\"cancel all orders\",\"canceledOrders\":[\"O1\",\"O2\",\"O3\"]}}\n",
+    "stderr": "",
+    "exit_code": 0,
+    "expect_map": {
+      "result": {
+        "txid": "OCANCELALL"
+      }
+    }
+  },
+  {
+    "name": "ordercancelafter_success",
+    "fn": "run",
+    "stdout": "{\"error\":[],\"result\":{\"txid\":\"OCANCELAFTER\",\"descr\":\"cancel-after 60\",\"currenttxid\":\"OCANCELAFTER\"}}\n",
+    "stderr": "",
+    "exit_code": 0,
+    "expect_map": {
+      "result": {
+        "txid": "OCANCELAFTER"
+      }
+    }
+  }
+]
+

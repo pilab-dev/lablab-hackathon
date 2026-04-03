@@ -2,7 +2,10 @@ openapi: 3.0.3
 info:
   title: Kraken Trader API
   version: 1.0.0
-  description: API for managing market data subscriptions and prompts
+  description: API for managing market data subscriptions, prompts, and system configuration
+servers:
+  - url: http://localhost:8081
+    description: Local development server
 
 paths:
   /health:
@@ -40,7 +43,7 @@ paths:
                   subscriptions:
                     type: array
                     items:
-                      $ref: '#/components/schemas/SubscriptionDetail'
+                      type: string
                   count:
                     type: integer
 
@@ -78,24 +81,18 @@ paths:
         '409':
           description: Already subscribed
 
-  /subscriptions/delete:
-    post:
+  /subscriptions/{symbol}:
+    delete:
       summary: Remove a subscription
-      operationId: deleteSubscription
+      operationId: removeSubscription
       tags:
         - Subscriptions
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - symbol
-              properties:
-                symbol:
-                  type: string
-                  example: 1INCH/USD
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          schema:
+            type: string
       responses:
         '200':
           description: Subscription removed
@@ -108,8 +105,6 @@ paths:
                     type: string
                   symbol:
                     type: string
-        '400':
-          description: Bad request
         '404':
           description: Not found
 
@@ -161,24 +156,7 @@ paths:
                   count:
                     type: integer
 
-  /loglevel:
-    get:
-      summary: Get current log level
-      operationId: getLogLevel
-      tags:
-        - System
-      responses:
-        '200':
-          description: Current log level
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  level:
-                    type: string
-                    enum: [trace, debug, info, warn, error]
-
+/loglevel:
     post:
       summary: Set console log level
       operationId: setLogLevel
@@ -238,67 +216,8 @@ paths:
                   count:
                     type: integer
 
-  /pairs:
-    get:
-      summary: Get available trading pairs for subscriptions
-      operationId: getPairs
-      tags:
-        - Market
-      responses:
-        '200':
-          description: List of available trading pairs
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  pairs:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/TradingPair'
-                  count:
-                    type: integer
-
-  /ticker/{symbol}:
-    get:
-      summary: Get current ticker for a symbol
-      operationId: getTicker
-      tags:
-        - Market
-      parameters:
-        - name: symbol
-          in: path
-          required: true
-          schema:
-            type: string
-            example: BTC/USD
-      responses:
-        '200':
-          description: Current ticker data
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TickerData'
-
 components:
   schemas:
-    TickerData:
-      type: object
-      properties:
-        symbol:
-          type: string
-        bid:
-          type: number
-        ask:
-          type: number
-        last:
-          type: number
-        volume:
-          type: number
-        updated_at:
-          type: string
-          format: date-time
-
     AssetInfo:
       type: object
       properties:
@@ -316,19 +235,6 @@ components:
           type: string
         collateral_value:
           type: number
-
-    TradingPair:
-      type: object
-      properties:
-        symbol:
-          type: string
-          description: Trading pair symbol (e.g., BTCUSD)
-        altname:
-          type: string
-          description: Alternative name (e.g., XBT/USD)
-        ws_name:
-          type: string
-          description: WebSocket pair name (e.g., BTC/USD)
 
     SubscriptionDetail:
       type: object

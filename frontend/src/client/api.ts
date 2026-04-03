@@ -15,15 +15,17 @@ import type {
 import type {
   AddSubscription200,
   AddSubscriptionBody,
+  DeleteSubscription200,
+  DeleteSubscriptionBody,
   GetAssets200,
   GetAssetsParams,
   GetHealth200,
   GetLogLevel200,
+  GetPairs200,
   ListPrompts200,
   ListPromptsParams,
   ListSubscriptions200,
   ListSubscriptionsDetail200,
-  RemoveSubscription200,
   SetLogLevel200,
   SetLogLevelBody,
   TickerData
@@ -67,11 +69,12 @@ const addSubscription = (
 /**
  * @summary Remove a subscription
  */
-const removeSubscription = (
-    symbol: string, options?: AxiosRequestConfig
- ): Promise<AxiosResponse<RemoveSubscription200>> => {
-    return axiosInstance.delete(
-      `/subscriptions/${symbol}`,options
+const deleteSubscription = (
+    deleteSubscriptionBody: DeleteSubscriptionBody, options?: AxiosRequestConfig
+ ): Promise<AxiosResponse<DeleteSubscription200>> => {
+    return axiosInstance.post(
+      `/subscriptions/delete`,
+      deleteSubscriptionBody,options
     );
   }
 
@@ -136,6 +139,17 @@ const getAssets = (
   }
 
 /**
+ * @summary Get available trading pairs for subscriptions
+ */
+const getPairs = (
+     options?: AxiosRequestConfig
+ ): Promise<AxiosResponse<GetPairs200>> => {
+    return axiosInstance.get(
+      `/pairs`,options
+    );
+  }
+
+/**
  * @summary Get current ticker for a symbol
  */
 const getTicker = (
@@ -146,14 +160,15 @@ const getTicker = (
     );
   }
 
-return {getHealth,listSubscriptions,addSubscription,removeSubscription,listSubscriptionsDetail,listPrompts,getLogLevel,setLogLevel,getAssets,getTicker}};
+return {getHealth,listSubscriptions,addSubscription,deleteSubscription,listSubscriptionsDetail,listPrompts,getLogLevel,setLogLevel,getAssets,getPairs,getTicker}};
 export type GetHealthResult = AxiosResponse<GetHealth200>
 export type ListSubscriptionsResult = AxiosResponse<ListSubscriptions200>
 export type AddSubscriptionResult = AxiosResponse<AddSubscription200>
-export type RemoveSubscriptionResult = AxiosResponse<RemoveSubscription200>
+export type DeleteSubscriptionResult = AxiosResponse<DeleteSubscription200>
 export type ListSubscriptionsDetailResult = AxiosResponse<ListSubscriptionsDetail200>
 export type ListPromptsResult = AxiosResponse<ListPrompts200>
 export type GetLogLevelResult = AxiosResponse<GetLogLevel200>
 export type SetLogLevelResult = AxiosResponse<SetLogLevel200>
 export type GetAssetsResult = AxiosResponse<GetAssets200>
+export type GetPairsResult = AxiosResponse<GetPairs200>
 export type GetTickerResult = AxiosResponse<TickerData>

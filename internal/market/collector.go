@@ -80,6 +80,12 @@ func (wsState) String() string {
 	return "unknown"
 }
 
+type TradingPair struct {
+	Symbol  string
+	Altname string
+	WsName  string
+}
+
 // Collector manages the polling of market data from Kraken
 type Collector struct {
 	cli   *kraken.Client
@@ -563,13 +569,14 @@ func (c *Collector) AddSubscription(symbol string) bool {
 	c.subsMu.Lock()
 	defer c.subsMu.Unlock()
 
-	log.Debug().Str("symbol", symbol).Msg("AddSubscription called")
+	formatted := c.FormatSymbol(symbol)
+	log.Debug().Str("symbol", symbol).Str("formatted", formatted).Msg("AddSubscription called")
 
-	if c.subscriptions[symbol] {
+	if c.subscriptions[formatted] {
 		return false
 	}
-	c.subscriptions[symbol] = true
-	log.Debug().Str("symbol", symbol).Msg("Subscription added to in-memory map")
+	c.subscriptions[formatted] = true
+	log.Debug().Str("symbol", formatted).Msg("Subscription added to in-memory map")
 	return true
 }
 
@@ -577,13 +584,43 @@ func (c *Collector) RemoveSubscription(symbol string) bool {
 	c.subsMu.Lock()
 	defer c.subsMu.Unlock()
 
-	if !c.subscriptions[symbol] {
+	formatted := c.FormatSymbol(symbol)
+
+	// Try formatted first (without slash), then try original (with slash)
+	if !c.subscriptions[formatted] {
+		// Try with original (for legacy data)
+		if c.subscriptions[symbol] {
+			delete(c.subscriptions, symbol)
+			if c.repo != nil {
+				_ = c.repo.DeleteSubscription(context.Background(), symbol)
+			}
+			return true
+		}
 		return false
 	}
-	delete(c.subscriptions, symbol)
+	delete(c.subscriptions, formatted)
 
 	if c.repo != nil {
-		_ = c.repo.DeleteSubscription(context.Background(), symbol)
+		_ = c.repo.DeleteSubscription(context.Background(), formatted)
 	}
 	return true
+}
+
+func (c *Collector) GetAvailablePairs() []TradingPair {
+	c.pairsMu.RLock()
+	defer c.pairsMu.RUnlock()
+
+	result := make([]TradingPair, 0, len(c.pairsCache))
+	seen := make(map[string]bool)
+	for base, wsname := range c.pairsCache {
+		if seen[base] {
+			continue
+		}
+		seen[base] = true
+		result = append(result, TradingPair{
+			Symbol: base,
+			WsName: wsname,
+		})
+	}
+	return result
 }

@@ -139,7 +139,7 @@ func (c *PrismClient) doRequest(ctx context.Context, method, url string) (*http.
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		case <-time.After(backoff):
-			if backoff < 1 * time.Minute { // Cap backoff
+			if backoff < 1*time.Minute { // Cap backoff
 				backoff *= 2
 			}
 		}

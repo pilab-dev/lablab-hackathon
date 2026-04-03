@@ -3,3 +3,7 @@
 /bin
 .codex/
 .omx/
+/frontend/dist
+/cmd/trader/frontend/dist
+/trader.db
+/trader.log
