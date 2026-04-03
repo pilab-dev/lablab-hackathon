@@ -2,6 +2,18 @@
 
 This document provides essential information for AI agents working in this repository.
 
+## Development Workflow: API-First Approach
+
+**Always follow this order:**
+
+1. **Define OpenAPI Spec** — Write `api.yaml` first with all endpoints, request/response schemas
+2. **Generate Mappings** — Create handler functions and types from the spec (e.g., `internal/api/`)
+3. **Implement Logic** — Write the actual business logic to fulfill the API contracts
+
+> Never start with implementation. The OpenAPI spec is the source of truth.
+
+---
+
 ## Project Overview
 
 - **Language:** Go 1.26+
