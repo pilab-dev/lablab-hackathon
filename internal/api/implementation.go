@@ -4,19 +4,20 @@ package api
 
 import (
 	"net/http"
-	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/rs/zerolog/log"
 
 	"kraken-trader/internal/decision"
 	"kraken-trader/internal/market"
+	"kraken-trader/internal/state"
 	"kraken-trader/pkg/kraken"
 	"kraken-trader/pkg/logger"
 )
 
-func NewGinRouter(col *market.Collector, eng *decision.Engine, krakenClient *kraken.Client) *gin.Engine {
+func NewGinRouter(col *market.Collector, eng *decision.Engine, krakenClient *kraken.Client, stateMgr *state.MemoryManager) *gin.Engine {
 	router := gin.Default()
-	server := &Server{collector: col, engine: eng, krakenClient: krakenClient}
+	server := &Server{collector: col, engine: eng, krakenClient: krakenClient, stateMgr: stateMgr}
 	RegisterHandlersWithOptions(router, server, GinServerOptions{})
 	return router
 }
@@ -25,10 +26,11 @@ type Server struct {
 	collector    *market.Collector
 	engine       *decision.Engine
 	krakenClient *kraken.Client
+	stateMgr     *state.MemoryManager
 }
 
-func NewServer(col *market.Collector, eng *decision.Engine, krakenClient *kraken.Client) *Server {
-	return &Server{collector: col, engine: eng, krakenClient: krakenClient}
+func NewServer(col *market.Collector, eng *decision.Engine, krakenClient *kraken.Client, stateMgr *state.MemoryManager) *Server {
+	return &Server{collector: col, engine: eng, krakenClient: krakenClient, stateMgr: stateMgr}
 }
 
 func (s *Server) GetHealth(c *gin.Context) {
@@ -141,10 +143,17 @@ func (s *Server) SetLogLevel(c *gin.Context) {
 }
 
 func (s *Server) GetAssets(c *gin.Context, params GetAssetsParams) {
+	log.Info().Msg("GetAssets called - fetching from kraken")
 	assets, err := s.krakenClient.GetAssets(c.Request.Context())
 	if err != nil {
+		log.Error().Err(err).Msg("GetAssets failed")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get assets"})
 		return
+	}
+
+	log.Info().Int("count", len(assets)).Msg("Got assets from kraken")
+	if len(assets) == 0 {
+		log.Warn().Msg("Assets map is empty!")
 	}
 
 	result := make([]AssetInfo, 0, len(assets))
@@ -196,6 +205,23 @@ func (s *Server) GetAssets(c *gin.Context, params GetAssetsParams) {
 	c.JSON(http.StatusOK, gin.H{"assets": result, "count": len(result)})
 }
 
-func init() {
-	_ = time.Time{}
+func (s *Server) GetTicker(c *gin.Context, symbol string) {
+	pair := s.collector.FormatSymbol(symbol)
+	state, ok := s.stateMgr.GetMarketSnapshot(pair)
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "symbol not found or no data"})
+		return
+	}
+	bid := float32(state.Bid)
+	ask := float32(state.Ask)
+	last := float32(state.Last)
+	vol := float32(state.Volume24h)
+	c.JSON(http.StatusOK, TickerData{
+		Symbol:    &state.Pair,
+		Bid:       &bid,
+		Ask:       &ask,
+		Last:      &last,
+		Volume:    &vol,
+		UpdatedAt: &state.UpdatedAt,
+	})
 }

@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"embed"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"os"
 	"os/signal"
@@ -28,6 +30,9 @@ import (
 	"kraken-trader/pkg/config"
 	"kraken-trader/pkg/kraken"
 )
+
+//go:embed frontend/dist
+var frontendFS embed.FS
 
 func runRun(cmd *cobra.Command, args []string) error {
 	// Load configuration
@@ -129,6 +134,9 @@ func runRun(cmd *cobra.Command, args []string) error {
 
 	// Market Data Collector (WebSocket via kraken CLI)
 	collector := market.NewCollector(krakenClient, dbClient, stateMgr, natsClient, promptRepo)
+	if err := collector.LoadPairsCache(ctx); err != nil {
+		log.Warn().Err(err).Msg("Failed to load pairs cache, using fallback")
+	}
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -137,11 +145,24 @@ func runRun(cmd *cobra.Command, args []string) error {
 
 	// HTTP API Server for subscription management
 	router := gin.Default()
-	apiServer := api.NewServer(collector, engine, krakenClient)
-	api.RegisterHandlersWithOptions(router, apiServer, api.GinServerOptions{})
+
+	// API routes group with /api prefix
+	apiGroup := router.Group("/api")
+	apiServer := api.NewServer(collector, engine, krakenClient, stateMgr)
+	api.RegisterHandlersWithOptions(apiGroup, apiServer, api.GinServerOptions{})
+
+	// Debug route to test
+	apiGroup.GET("/test-assets", func(c *gin.Context) {
+		assets, err := krakenClient.GetAssets(c.Request.Context())
+		if err != nil {
+			c.JSON(500, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(200, gin.H{"assets": assets, "count": len(assets)})
+	})
 
 	// Serve embedded OpenAPI spec and Swagger UI
-	router.GET("/openapi.json", func(c *gin.Context) {
+	router.GET("/api/openapi.json", func(c *gin.Context) {
 		swagger, err := api.GetSwagger()
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get swagger"})
@@ -149,10 +170,10 @@ func runRun(cmd *cobra.Command, args []string) error {
 		}
 		c.JSON(http.StatusOK, swagger)
 	})
-	router.GET("/swagger", func(c *gin.Context) {
-		c.Redirect(http.StatusMovedPermanently, "/swagger/")
+	router.GET("/api/swagger", func(c *gin.Context) {
+		c.Redirect(http.StatusMovedPermanently, "/api/swagger/")
 	})
-	router.GET("/swagger/", func(c *gin.Context) {
+	router.GET("/api/swagger/", func(c *gin.Context) {
 		c.Header("Content-Type", "text/html")
 		c.String(http.StatusOK, `<!DOCTYPE html>
 <html>
@@ -166,7 +187,7 @@ func runRun(cmd *cobra.Command, args []string) error {
     <script>
         window.onload = () => {
             window.ui = SwaggerUIBundle({
-                url: "/openapi.json",
+                url: "/api/openapi.json",
                 dom_id: "#swagger-ui",
                 deepLinking: true
             });
@@ -176,12 +197,28 @@ func runRun(cmd *cobra.Command, args []string) error {
 </html>`)
 	})
 
+	// Serve embedded frontend
+	frontendContent, err := fs.Sub(frontendFS, "frontend/dist")
+	if err != nil {
+		log.Warn().Err(err).Msg("Frontend not embedded, skipping static serving")
+	} else {
+		router.NoRoute(func(c *gin.Context) {
+			path := c.Request.URL.Path
+			if _, err := frontendContent.Open(path); err == nil {
+				http.FileServer(http.FS(frontendContent)).ServeHTTP(c.Writer, c.Request)
+			} else {
+				http.FileServer(http.FS(frontendContent)).ServeHTTP(c.Writer, c.Request)
+			}
+		})
+	}
+
 	apiAddr := fmt.Sprintf(":%d", cfg.APIPort)
+	srv := &http.Server{Addr: apiAddr, Handler: router}
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		log.Info().Int("port", cfg.APIPort).Msg("Starting Market API server")
-		if err := http.ListenAndServe(apiAddr, router); err != nil && err != http.ErrServerClosed {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Error().Err(err).Msg("API server error")
 		}
 	}()
@@ -228,6 +265,12 @@ func runRun(cmd *cobra.Command, args []string) error {
 	sig := <-sigCh
 	log.Info().Str("signal", sig.String()).Msg("Received signal, shutting down...")
 	cancel()
+
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer shutdownCancel()
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		log.Warn().Err(err).Msg("HTTP server shutdown error")
+	}
 
 	// Wait for goroutines with a timeout
 	done := make(chan struct{})

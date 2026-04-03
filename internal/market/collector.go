@@ -3,6 +3,7 @@ package market
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -59,6 +60,26 @@ type WSSubscribeResponse struct {
 	TimeOut time.Time `json:"time_out"`
 }
 
+type wsState int
+
+const (
+	wsStateIdle wsState = iota
+	wsStateRunning
+	wsStateStopping
+)
+
+func (wsState) String() string {
+	switch wsState(0) {
+	case wsStateIdle:
+		return "idle"
+	case wsStateRunning:
+		return "running"
+	case wsStateStopping:
+		return "stopping"
+	}
+	return "unknown"
+}
+
 // Collector manages the polling of market data from Kraken
 type Collector struct {
 	cli   *kraken.Client
@@ -70,8 +91,14 @@ type Collector struct {
 	subscriptions map[string]bool
 	subsMu        sync.RWMutex
 
+	pairsCache map[string]string // user symbol -> wsname (e.g., "BTC" -> "BTC/USD")
+	pairsMu    sync.RWMutex
+
 	ctx    context.Context
 	cancel context.CancelFunc
+
+	wsMu    sync.Mutex
+	wsState wsState
 }
 
 // NewCollector initializes a new market data collector using WebSockets
@@ -85,8 +112,10 @@ func NewCollector(cli *kraken.Client, db *storage.Client, stateMgr *state.Memory
 		nats:          natsClient,
 		repo:          repo,
 		subscriptions: make(map[string]bool),
+		pairsCache:    make(map[string]string),
 		ctx:           ctx,
 		cancel:        cancel,
+		wsState:       wsStateIdle,
 	}
 }
 
@@ -95,11 +124,28 @@ func (c *Collector) Start(ctx context.Context) {
 	go c.runWebSocket(ctx)
 }
 
+// Stop gracefully stops the WebSocket connection
+func (c *Collector) Stop() {
+	c.wsMu.Lock()
+	if c.wsState == wsStateIdle {
+		c.wsMu.Unlock()
+		return
+	}
+	c.wsState = wsStateStopping
+	c.cancel()
+	c.wsMu.Unlock()
+
+	log.Info().Msg("WebSocket stop requested")
+}
+
 // runWebSocket contains the blocking WebSocket loop
 func (c *Collector) runWebSocket(ctx context.Context) {
+	c.wsMu.Lock()
+	c.wsState = wsStateRunning
+	c.wsMu.Unlock()
+
 	log.Info().Msg("Starting WebSocket Market Data Collector")
 
-	// Load active subscriptions from DB on startup
 	if c.repo != nil {
 		subs, err := c.repo.GetActiveSubscriptions(ctx)
 		if err == nil && len(subs) > 0 {
@@ -112,16 +158,24 @@ func (c *Collector) runWebSocket(ctx context.Context) {
 		}
 	}
 
-	// Build the subscription list from both config pairs and DB subscriptions
 	pairsToSub := c.getAllPairs()
+
+	log.Info().Strs("pairs", pairsToSub).Msg("Starting WebSocket ticker with pairs")
 
 	args := append([]string{"ws", "ticker"}, pairsToSub...)
 
-	// Start the continuous stream. This callback fires for every line of JSON received.
 	err := c.cli.RunStream(ctx, c.handleWSTick, args...)
 	if err != nil {
 		log.Error().Err(err).Msg("WebSocket stream failed or context canceled")
 	}
+
+	c.wsMu.Lock()
+	if c.wsState != wsStateStopping {
+		c.wsState = wsStateIdle
+	}
+	c.wsMu.Unlock()
+
+	log.Info().Msg("WebSocket loop exited")
 }
 
 // getAllPairs returns all pairs to subscribe from DB subscriptions only
@@ -140,12 +194,35 @@ func (c *Collector) getAllPairs() []string {
 	return result
 }
 
-// RestartWebSocket cancels the current WebSocket and starts a new one
+// RestartWebSocket cancels the current WebSocket and starts a new one.
+// It is safe to call concurrently - only one restart can be in progress at a time.
 func (c *Collector) RestartWebSocket() {
-	log.Info().Msg("Restarting WebSocket")
+	c.wsMu.Lock()
+
+	if c.wsState == wsStateStopping {
+		c.wsMu.Unlock()
+		log.Warn().Msg("RestartWebSocket: already stopping, skipping")
+		return
+	}
+
+	if c.wsState == wsStateIdle {
+		c.wsMu.Unlock()
+		log.Info().Msg("RestartWebSocket: not running, starting fresh")
+		newCtx, newCancel := context.WithCancel(context.Background())
+		c.ctx = newCtx
+		c.cancel = newCancel
+		go c.runWebSocket(newCtx)
+		return
+	}
+
+	log.Info().Msg("RestartWebSocket: stopping current WebSocket")
+	c.wsState = wsStateStopping
 	c.cancel()
 
-	// Create new context from the stored context
+	c.wsMu.Unlock()
+
+	time.Sleep(100 * time.Millisecond)
+
 	newCtx, newCancel := context.WithCancel(context.Background())
 	c.ctx = newCtx
 	c.cancel = newCancel
@@ -164,23 +241,32 @@ type WSMessage struct {
 }
 
 func (c *Collector) handleWSTick(line []byte) {
-	var msg WSMessage
+	var msg struct {
+		Channel string `json:"channel"`
+		Type    string `json:"type"`
+		Method  string `json:"method"`
+	}
 	if err := json.Unmarshal(line, &msg); err != nil {
-		log.Error().Str("data", string(line)).Err(err).Msg("Failed to unmarshal message")
+		log.Error().Err(err).Msg("Failed to unmarshal WS message")
 		return
 	}
 
-	switch {
-	case msg.Channel == "status":
-		c.handleStatus(line)
-	case msg.Method == "subscribe" && msg.Result != nil:
+	log.Debug().Str("channel", msg.Channel).Str("type", msg.Type).Str("method", msg.Method).Msg("WS message")
+
+	if msg.Method == "subscribe" {
 		c.handleSubscribe(line)
-	case msg.Channel == "heartbeat":
 		return
-	case msg.Channel == "ticker":
+	}
+
+	switch msg.Channel {
+	case "status":
+		c.handleStatus(line)
+	case "ticker":
 		c.handleTicker(line)
+	case "heartbeat":
+		// ignore
 	default:
-		log.Trace().Str("channel", msg.Channel).Str("method", msg.Method).Msg("Unknown message type")
+		log.Debug().Str("channel", msg.Channel).Msg("Unknown channel")
 	}
 }
 
@@ -242,7 +328,9 @@ func (c *Collector) handleSubscribe(line []byte) {
 					IsActive:  true,
 					CreatedAt: time.Now(),
 				}
-				_ = c.repo.SaveSubscription(context.Background(), sub)
+				if err := c.repo.SaveSubscription(context.Background(), sub); err != nil {
+					log.Error().Err(err).Str("symbol", symbol).Msg("Failed to save subscription to DB")
+				}
 			}(subResp.Result.Symbol)
 		}
 
@@ -292,7 +380,9 @@ func (c *Collector) handleTicker(line []byte) {
 					IsActive: true,
 					LastData: time.Now(),
 				}
-				_ = c.repo.SaveSubscription(context.Background(), sub)
+				if err := c.repo.SaveSubscription(context.Background(), sub); err != nil {
+					log.Error().Err(err).Str("symbol", symbol).Msg("Failed to update subscription last_data")
+				}
 			}(d.Symbol)
 		}
 
@@ -340,20 +430,99 @@ func (c *Collector) publishToNATS(subject string, data interface{}) {
 }
 
 func (c *Collector) FormatSymbol(symbol string) string {
-	// If already has slash, it's a pair
+	// If already has slash, normalize to no-slash form
 	if strings.Contains(symbol, "/") {
-		return symbol
+		return strings.ReplaceAll(symbol, "/", "")
 	}
-	// If it's a short asset code without slash, assume USD pair
-	if len(symbol) <= 6 {
-		return symbol + "/USD"
+
+	// Check cache first
+	c.pairsMu.RLock()
+	if wsname, ok := c.pairsCache[symbol]; ok {
+		c.pairsMu.RUnlock()
+		return strings.ReplaceAll(wsname, "/", "")
 	}
-	// Otherwise format as pair (e.g., BTCUSD -> BTC/USD)
-	return symbol[:3] + "/" + symbol[3:]
+	// Also try appending USD as default quote
+	if wsname, ok := c.pairsCache[symbol+"USD"]; ok {
+		c.pairsMu.RUnlock()
+		return strings.ReplaceAll(wsname, "/", "")
+	}
+	c.pairsMu.RUnlock()
+
+	// Not in cache, try to format as common pair
+	formatted := symbol + "/USD"
+	return strings.ReplaceAll(formatted, "/", "")
 }
 
-func (c *Collector) normalizeSymbol(symbol string) string {
-	return strings.ReplaceAll(symbol, "/", "")
+// LoadPairsCache loads the pairs cache from Kraken API for symbol translation
+func (c *Collector) LoadPairsCache(ctx context.Context) error {
+	pairs, err := c.cli.GetPairs(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to load pairs: %w", err)
+	}
+
+	c.pairsMu.Lock()
+	defer c.pairsMu.Unlock()
+
+	// First pass: collect base -> primary wsname mappings
+	baseToWSName := make(map[string]string)
+	for _, data := range pairs {
+		wsname, ok := data["wsname"].(string)
+		if !ok {
+			continue
+		}
+
+		parts := strings.Split(wsname, "/")
+		if len(parts) != 2 {
+			continue
+		}
+		base := parts[0]
+		quote := parts[1]
+
+		// Prioritize USD, then EUR, then USDT for "primary" pair (matches Kraken WS canonical)
+		priority := 100
+		switch quote {
+		case "USD":
+			priority = 1
+		case "EUR":
+			priority = 2
+		case "USDT":
+			priority = 3
+		case "USDC":
+			priority = 4
+		}
+
+		if existing, exists := baseToWSName[base]; !exists {
+			baseToWSName[base] = wsname
+		} else {
+			// Compare priority
+			existingParts := strings.Split(existing, "/")
+			if len(existingParts) == 2 {
+				existingPriority := 100
+				switch existingParts[1] {
+				case "USD":
+					existingPriority = 1
+				case "EUR":
+					existingPriority = 2
+				case "USDT":
+					existingPriority = 3
+				case "USDC":
+					existingPriority = 4
+				}
+				if priority < existingPriority {
+					baseToWSName[base] = wsname
+				}
+			}
+		}
+	}
+
+	// Second pass: populate cache
+	for base, wsname := range baseToWSName {
+		// Cache: base symbol -> wsname (ETH -> ETH/USDT)
+		c.pairsCache[base] = wsname
+	}
+
+	log.Info().Int("pairs", len(c.pairsCache)).Msg("Pairs cache loaded")
+	return nil
 }
 
 func (c *Collector) ListSubscriptions() []string {
@@ -379,6 +548,7 @@ func (c *Collector) GetSubscriptionDetail(symbol string) (createdAt, lastData ti
 	}
 	subs, err := c.repo.GetActiveSubscriptions(context.Background())
 	if err != nil {
+		log.Error().Err(err).Str("symbol", symbol).Msg("Failed to get subscription details")
 		return time.Time{}, time.Time{}, false
 	}
 	for _, s := range subs {

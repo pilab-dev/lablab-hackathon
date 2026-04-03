@@ -3,9 +3,6 @@ info:
   title: Kraken Trader API
   version: 1.0.0
   description: API for managing market data subscriptions and prompts
-servers:
-  - url: http://localhost:8081
-    description: Local development server
 
 paths:
   /health:
@@ -233,8 +230,46 @@ paths:
                   count:
                     type: integer
 
+  /ticker/{symbol}:
+    get:
+      summary: Get current ticker for a symbol
+      operationId: getTicker
+      tags:
+        - Market
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          schema:
+            type: string
+            example: BTC/USD
+      responses:
+        '200':
+          description: Current ticker data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TickerData'
+
 components:
   schemas:
+    TickerData:
+      type: object
+      properties:
+        symbol:
+          type: string
+        bid:
+          type: number
+        ask:
+          type: number
+        last:
+          type: number
+        volume:
+          type: number
+        updated_at:
+          type: string
+          format: date-time
+
     AssetInfo:
       type: object
       properties:

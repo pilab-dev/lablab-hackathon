@@ -1,3 +1,5 @@
 .env
 /coverage.out
 /bin
+.codex/
+.omx/

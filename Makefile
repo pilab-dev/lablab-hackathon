@@ -1,4 +1,4 @@
-.PHONY: help setup docker-up docker-down test run clean generate
+.PHONY: help setup docker-up docker-down test run clean generate frontend-deps frontend-build frontend-copy
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -8,7 +8,22 @@ setup: ## Initialize Go module and download dependencies
 	go mod tidy
 
 generate: ## Generate API code from OpenAPI spec
-	oapi-codegen -package api -generate gin,server api.yaml > internal/api/generated.go
+	oapi-codegen -package api -generate types,gin,spec internal/market/api.yaml > internal/api/generated.go
+
+frontend-deps: ## Install frontend dependencies
+	cd frontend && pnpm install
+
+frontend-build: ## Build frontend
+	cd frontend && pnpm build
+
+frontend-copy: ## Copy frontend build to Go embed location
+	mkdir -p cmd/trader/frontend/dist
+	cp -r frontend/dist/* cmd/trader/frontend/dist/
+
+generate-client: ## Generate TypeScript client from OpenAPI spec
+	cd frontend && npx -y orval --config orval.config.ts
+
+frontend: frontend-deps generate-client frontend-build frontend-copy ## Build frontend and prepare for embedding
 
 docker-up: ## Start Docker services (InfluxDB, ChromaDB)
 	docker compose -f configs/docker-compose.yml up -d
@@ -38,12 +53,14 @@ run: ## Run the trader bot
 run-with-env: ## Run the trader bot with .env file
 	set -a && . .env && set +a && go run cmd/trader/main.go
 
-build: ## Build the binary
+build: frontend ## Build the binary with embedded frontend
 	go build -o bin/kraken-trader ./cmd/trader
 
 clean: ## Remove build artifacts
 	rm -rf bin/
 	rm -f coverage.out coverage.html
+	rm -rf cmd/trader/frontend
+	rm -rf frontend/dist
 
 lint: ## Run linter
 	golangci-lint run ./...

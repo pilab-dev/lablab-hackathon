@@ -255,14 +255,55 @@ log.Info().Err(err).Str("url", url).Msg("request failed")
 
 ```
 cmd/trader/          # Application entry point
+cmd/trader/frontend/ # Embedded frontend build (auto-generated)
+internal/api/        # OpenAPI generated types and handlers
 internal/decision/   # LLM decision engine
-internal/news/      # News crawler, ChromaDB, embedder
-internal/market/    # Market data collection
-internal/state/     # In-memory state management
-internal/storage/   # InfluxDB client & models
+internal/news/       # News crawler, ChromaDB, embedder
+internal/market/     # Market data collection
+internal/state/      # In-memory state management
+internal/storage/    # InfluxDB client & models
+frontend/            # React + MUI frontend source
 pkg/kraken/         # Kraken CLI wrapper
-configs/            # Docker & config files
+configs/             # Docker & config files
 ```
+
+---
+
+## Frontend Development
+
+The frontend is a React + MUI application served as embedded static content.
+
+### Commands
+```bash
+make frontend-deps   # Install dependencies (pnpm)
+make frontend-build  # Build production bundle
+make frontend-copy  # Copy build to cmd/trader/frontend
+make frontend       # All of the above
+make build          # Builds Go binary with embedded frontend
+```
+
+### API Integration
+- Frontend API calls use relative URLs (no base URL)
+- API endpoints are prefixed with `/api`
+- Vite dev server: `cd frontend && pnpm dev`
+
+---
+
+## API Routes (prefixed with /api)
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/health` | GET | Health check |
+| `/api/subscriptions` | GET | List subscriptions |
+| `/api/subscriptions` | POST | Add subscription |
+| `/api/subscriptions/:symbol` | DELETE | Remove subscription |
+| `/api/subscriptions/detail` | GET | List with details |
+| `/api/assets` | GET | List tradable assets |
+| `/api/ticker/:symbol` | GET | Get ticker data |
+| `/api/prompts` | GET | List prompt history |
+| `/api/loglevel` | GET | Get log level |
+| `/api/loglevel` | POST | Set log level |
+| `/api/swagger/` | GET | Swagger UI |
 
 ---
 
