@@ -127,9 +127,17 @@ func runRun(cmd *cobra.Command, args []string) error {
 	}
 
 	// Decision Engine
+	var llmBaseURL string
+	if cfg.LLMProvider == "lmstudio" {
+		llmBaseURL = cfg.LMStudioURL
+	} else {
+		llmBaseURL = cfg.OllamaURL
+	}
+
 	engine := decision.NewEngine(
-		cfg.OllamaURL,
-		cfg.OllamaModel,
+		cfg.LLMProvider,
+		llmBaseURL,
+		cfg.LLMModel,
 		stateMgr,
 		chromaClient,
 		embedder,
