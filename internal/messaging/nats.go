@@ -62,11 +62,11 @@ func (c *NATSClient) Subscribe(subject string, handler func(msg *nats.Msg)) (*na
 }
 
 // EnsureStream creates a JetStream stream if it does not already exist
-func (c *NATSClient) EnsureStream(ctx context.Context, name string, subjects []string) error {
+func (c *NATSClient) EnsureStream(ctx context.Context, name string, subjects []string, storage jetstream.StorageType) error {
 	stream, err := c.js.CreateOrUpdateStream(ctx, jetstream.StreamConfig{
 		Name:     name,
 		Subjects: subjects,
-		Storage:  jetstream.MemoryStorage,
+		Storage:  storage,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create stream %s: %w", name, err)
@@ -98,7 +98,6 @@ func (c *NATSClient) ConsumePersisted(ctx context.Context, stream, durable strin
 
 	consumeCtx, err := consumer.Consume(func(msg jetstream.Msg) {
 		handler(msg)
-		msg.Ack()
 	})
 	if err != nil {
 		return fmt.Errorf("failed to start consuming: %w", err)

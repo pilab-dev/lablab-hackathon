@@ -42,6 +42,9 @@ type Config struct {
 	// Dashboard
 	DashboardPort int `mapstructure:"DASHBOARD_PORT"`
 
+	// HTTP API Server
+	APIPort int `mapstructure:"API_PORT"`
+
 	// Logging
 	LogLevel string `mapstructure:"LOG_LEVEL"`
 
@@ -101,5 +104,6 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("CHROMA_COLLECTION", "news-embeddings")
 	v.SetDefault("NATS_URL", "nats://localhost:4222")
 	v.SetDefault("DASHBOARD_PORT", 8080)
+	v.SetDefault("API_PORT", 8081)
 	v.SetDefault("LOG_LEVEL", "info")
 }

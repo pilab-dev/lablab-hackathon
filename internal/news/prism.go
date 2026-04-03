@@ -19,10 +19,20 @@ type PrismClient struct {
 
 // SignalSummary maps to the PRISM GET /signals/summary response
 type SignalSummary struct {
-	Symbol   string `json:"symbol"`
-	Momentum string `json:"momentum"`
-	Breakout string `json:"breakout"`
-	Volume   string `json:"volume"`
+	Symbol        string  `json:"symbol"`
+	OverallSignal string  `json:"overall_signal"`
+	Direction     string  `json:"direction"`
+	Strength      string  `json:"strength"`
+	BullishScore  int     `json:"bullish_score"`
+	BearishScore  int     `json:"bearish_score"`
+	CurrentPrice  float64 `json:"current_price"`
+	Timestamp     string  `json:"timestamp"`
+}
+
+type prismSignalResponse struct {
+	Object     string          `json:"object"`
+	Data       []SignalSummary `json:"data"`
+	Pagination PaginationInfo  `json:"pagination"`
 }
 
 // PaginationInfo represents pagination metadata from PRISM API
@@ -71,66 +81,13 @@ func NewPrismClient(apiKey string) *PrismClient {
 	}
 }
 
-// FetchSignalSummary gets technical signals for specific pairs
-func (c *PrismClient) FetchSignalSummary(ctx context.Context, symbols []string) ([]SignalSummary, error) {
-	url := fmt.Sprintf("%s/signals/summary?symbols=%s", c.baseURL, strings.Join(symbols, ","))
+func (c *PrismClient) doRequest(ctx context.Context, method, url string) (*http.Response, error) {
+	var lastErr error
+	maxRetries := 3
+	backoff := 1 * time.Second
 
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Set("X-API-Key", c.apiKey)
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("prism api request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("prism api returned status: %d", resp.StatusCode)
-	}
-
-	// PRISM returns a map of symbol -> signals, we need to unmarshal the dynamic keys
-	var rawResp map[string]struct {
-		Momentum string `json:"momentum"`
-		Breakout string `json:"breakout"`
-		Volume   string `json:"volume"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&rawResp); err != nil {
-		bb, _ := io.ReadAll(resp.Body)
-
-		return nil, fmt.Errorf("failed to decode prism signals: %w, body: %+v", err, string(bb))
-	}
-
-	var summaries []SignalSummary
-	for sym, data := range rawResp {
-		summaries = append(summaries, SignalSummary{
-			Symbol:   sym,
-			Momentum: data.Momentum,
-			Breakout: data.Breakout,
-			Volume:   data.Volume,
-		})
-	}
-
-	return summaries, nil
-}
-
-// FetchCryptoNews gets the latest crypto news from PRISM with pagination support
-func (c *PrismClient) FetchCryptoNews(ctx context.Context, limit int) ([]NewsArticle, error) {
-	var allArticles []NewsArticle
-	cursor := ""
-
-	for {
-		url := fmt.Sprintf("%s/news/crypto?limit=%d", c.baseURL, limit)
-		if cursor != "" {
-			url += fmt.Sprintf("&cursor=%s", cursor)
-		}
-
-		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	for i := 0; i <= maxRetries; i++ {
+		req, err := http.NewRequestWithContext(ctx, method, url, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -140,7 +97,106 @@ func (c *PrismClient) FetchCryptoNews(ctx context.Context, limit int) ([]NewsArt
 
 		resp, err := c.httpClient.Do(req)
 		if err != nil {
-			return nil, fmt.Errorf("prism api request failed: %w", err)
+			lastErr = err
+			// Check if it's a transient error that might be worth retrying
+			errMsg := err.Error()
+			if strings.Contains(errMsg, "http2: server sent GOAWAY") ||
+				strings.Contains(errMsg, "connection reset by peer") ||
+				strings.Contains(errMsg, "timeout") {
+				// Retry on transient network issues
+			} else {
+				return nil, err // unexpected error
+			}
+		} else {
+			if resp.StatusCode == http.StatusOK {
+				return resp, nil
+			}
+
+			lastErr = fmt.Errorf("prism api returned status: %d", resp.StatusCode)
+
+			if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
+				// Handle Retry-After if present for 429
+				if resp.StatusCode == http.StatusTooManyRequests {
+					if ra := resp.Header.Get("Retry-After"); ra != "" {
+						if d, err := time.ParseDuration(ra + "s"); err == nil {
+							backoff = d
+						}
+					}
+				}
+				resp.Body.Close()
+			} else {
+				// Other status codes (400, 401, 403, 404) should not be retried
+				return resp, nil
+			}
+		}
+
+		if i == maxRetries {
+			break
+		}
+
+		// Wait before retrying
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(backoff):
+			if backoff < 1 * time.Minute { // Cap backoff
+				backoff *= 2
+			}
+		}
+	}
+
+	return nil, lastErr
+}
+
+// FetchSignalSummary gets technical signals for specific pairs
+func (c *PrismClient) FetchSignalSummary(ctx context.Context, symbols []string) ([]SignalSummary, error) {
+	url := fmt.Sprintf("%s/signals/summary?symbols=%s", c.baseURL, strings.Join(symbols, ","))
+
+	resp, err := c.doRequest(ctx, "GET", url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("prism api returned status: %d", resp.StatusCode)
+	}
+
+	// PRISM returns {"object":"list","data":[...],"pagination":{...}}
+	bb, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read prism response body: %w", err)
+	}
+
+	var signalResp prismSignalResponse
+	if err := json.Unmarshal(bb, &signalResp); err != nil {
+		return nil, fmt.Errorf("failed to decode prism signals: %w, body: %s", err, string(bb))
+	}
+
+	return signalResp.Data, nil
+}
+
+// FetchCryptoNews gets the latest crypto news from PRISM with pagination support
+func (c *PrismClient) FetchCryptoNews(ctx context.Context, perPage int, totalLimit int) ([]NewsArticle, error) {
+	const maxPages = 100
+	var allArticles []NewsArticle
+	cursor := ""
+	pageCount := 0
+
+	for {
+		pageCount++
+		if pageCount >= maxPages {
+			break
+		}
+
+		url := fmt.Sprintf("%s/news/crypto?limit=%d", c.baseURL, perPage)
+		if cursor != "" {
+			url += fmt.Sprintf("&cursor=%s", cursor)
+		}
+
+		resp, err := c.doRequest(ctx, "GET", url)
+		if err != nil {
+			return nil, err
 		}
 
 		if resp.StatusCode != http.StatusOK {
@@ -165,6 +221,11 @@ func (c *PrismClient) FetchCryptoNews(ctx context.Context, limit int) ([]NewsArt
 				Source:    item.Source,
 				Timestamp: ts,
 			})
+		}
+
+		if totalLimit > 0 && len(allArticles) >= totalLimit {
+			allArticles = allArticles[:totalLimit]
+			break
 		}
 
 		if !newsResp.Pagination.HasMore || newsResp.Pagination.NextCursor == nil {

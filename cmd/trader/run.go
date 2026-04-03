@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"strings"
@@ -77,7 +79,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 		if err := natsClient.EnsureStream(ctx, "TRADING", []string{
 			"trade.decision.*",
 			"trade.execution.*",
-		}); err != nil {
+		}, jetstream.FileStorage); err != nil {
 			log.Warn().Err(err).Msg("Could not create JetStream stream")
 		}
 	}
@@ -115,11 +117,23 @@ func runRun(cmd *cobra.Command, args []string) error {
 	// ── Start Data Pipelines ───────────────────────────────────────
 
 	// Market Data Collector (WebSocket via kraken CLI)
-	collector := market.NewCollector(krakenClient, dbClient, stateMgr, cfg.TradePairs)
+	collector := market.NewCollector(krakenClient, dbClient, stateMgr, natsClient, cfg.TradePairs)
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		collector.Start(ctx)
+	}()
+
+	// HTTP API Server for subscription management
+	apiServer := market.NewServer(collector)
+	apiAddr := fmt.Sprintf(":%d", cfg.APIPort)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		log.Info().Int("port", cfg.APIPort).Msg("Starting Market API server")
+		if err := http.ListenAndServe(apiAddr, apiServer); err != nil && err != http.ErrServerClosed {
+			log.Error().Err(err).Msg("API server error")
+		}
 	}()
 
 	// PRISM Signal Polling (every 60s)
@@ -216,7 +230,7 @@ func fetchAndStoreSignals(ctx context.Context, prism *news.PrismClient, stateMgr
 	}
 
 	for _, s := range summaries {
-		stateMgr.UpdateSignal(s.Symbol, s.Momentum, s.Breakout, s.Volume)
+		stateMgr.UpdateSignal(s.Symbol, s.OverallSignal, s.Direction, s.Strength)
 	}
 	log.Info().Int("symbols", len(summaries)).Msg("Updated PRISM signals")
 }
@@ -239,7 +253,7 @@ func pollNews(ctx context.Context, prism *news.PrismClient, chroma *news.ChromaC
 }
 
 func fetchAndStoreNews(ctx context.Context, prism *news.PrismClient, chroma *news.ChromaClient, embedder *news.Embedder, stateMgr *state.MemoryManager) {
-	articles, err := prism.FetchCryptoNews(ctx, 10)
+	articles, err := prism.FetchCryptoNews(ctx, 10, 30)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to fetch PRISM news")
 		return
@@ -282,6 +296,9 @@ func persistDecisions(ctx context.Context, natsClient *messaging.NATSClient, db 
 		var trade storage.TradePoint
 		if err := json.Unmarshal(msg.Data(), &trade); err != nil {
 			log.Error().Err(err).Msg("Failed to unmarshal trade decision")
+			if err := msg.Term(); err != nil {
+				log.Error().Err(err).Msg("Failed to terminate message")
+			}
 			return
 		}
 		measurement, tags, fields, ts := trade.ToPointData()
@@ -289,6 +306,13 @@ func persistDecisions(ctx context.Context, natsClient *messaging.NATSClient, db 
 		defer cancel()
 		if err := db.WritePoint(dbCtx, measurement, tags, fields, ts); err != nil {
 			log.Error().Err(err).Msg("Failed to write trade to InfluxDB")
+			if err := msg.Nak(); err != nil {
+				log.Error().Err(err).Msg("Failed to nak message")
+			}
+			return
+		}
+		if err := msg.Ack(); err != nil {
+			log.Error().Err(err).Msg("Failed to ack message")
 		}
 	})
 	if err != nil {

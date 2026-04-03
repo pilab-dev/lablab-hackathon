@@ -5883,12 +5883,23 @@ paths:
             default: 30
             title: Limit
           description: Max articles to return
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+            description: Pagination cursor from previous response
+            title: Cursor
+          description: Pagination cursor from previous response
       responses:
         "200":
           description: Successful Response
           content:
             application/json:
-              schema: {}
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Crypto News News Crypto Get
         "422":
           description: Validation Error
           content:

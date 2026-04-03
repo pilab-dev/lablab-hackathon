@@ -88,7 +88,7 @@ func (c *Crawler) fetchSignals(ctx context.Context) {
 
 	for _, s := range summaries {
 		// Update the RAM state manager so the LLM Prompt Builder has instant access
-		c.stateMgr.UpdateSignal(s.Symbol, s.Momentum, s.Breakout, s.Volume)
+		c.stateMgr.UpdateSignal(s.Symbol, s.OverallSignal, s.Direction, s.Strength)
 	}
 }
 
@@ -97,7 +97,7 @@ func (c *Crawler) fetchNews(ctx context.Context) {
 
 	// Try PRISM first
 	if c.prismClient != nil && c.prismClient.apiKey != "" {
-		prismArticles, err := c.prismClient.FetchCryptoNews(ctx, 10)
+		prismArticles, err := c.prismClient.FetchCryptoNews(ctx, 10, 0)
 		if err == nil {
 			allArticles = append(allArticles, prismArticles...)
 		} else {

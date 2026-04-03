@@ -153,7 +153,11 @@ func (e *Engine) callOllama(ctx context.Context, userPrompt string) ([]TradeDeci
 	// 5. Parse JSON Decisions
 	var result llmResponse
 	if err := json.Unmarshal([]byte(ollamaResp.Message.Content), &result); err != nil {
-		log.Debug().Str("raw_output", ollamaResp.Message.Content).Msg("Raw LLM output")
+		preview := ollamaResp.Message.Content
+		if len(preview) > 100 {
+			preview = preview[:100] + "..."
+		}
+		log.Debug().Str("raw_output_preview", preview).Int("raw_output_length", len(ollamaResp.Message.Content)).Msg("Raw LLM output")
 		return nil, fmt.Errorf("failed to parse LLM decisions JSON: %w", err)
 	}
 
