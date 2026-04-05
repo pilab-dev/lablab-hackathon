@@ -56,6 +56,20 @@ type Config struct {
 	RedisURL      string `mapstructure:"REDIS_URL"`
 	RedisPassword string `mapstructure:"REDIS_PASSWORD"`
 	RedisDB       int    `mapstructure:"REDIS_DB"`
+
+	// ERC-8004 Blockchain Configuration
+	SepoliaRPCURL          string `mapstructure:"SEPOLIA_RPC_URL"`
+	SepoliaChainID         uint64 `mapstructure:"SEPOLIA_CHAIN_ID"`
+	OperatorPrivateKey     string `mapstructure:"OPERATOR_PRIVATE_KEY"`
+	AgentPrivateKey        string `mapstructure:"AGENT_PRIVATE_KEY"`
+	AgentID                string `mapstructure:"AGENT_ID"`
+	AgentRegistryAddr      string `mapstructure:"AGENT_REGISTRY_ADDRESS"`
+	HackathonVaultAddr     string `mapstructure:"HACKATHON_VAULT_ADDRESS"`
+	RiskRouterAddr         string `mapstructure:"RISK_ROUTER_ADDRESS"`
+	ReputationRegistryAddr string `mapstructure:"REPUTATION_REGISTRY_ADDRESS"`
+	ValidationRegistryAddr string `mapstructure:"VALIDATION_REGISTRY_ADDRESS"`
+	GasLimit               uint64 `mapstructure:"GAS_LIMIT"`
+	GasPriceGwei           uint64 `mapstructure:"GAS_PRICE_GWEI"`
 }
 
 // LoadConfig reads configuration from environment variables and config file
@@ -107,4 +121,13 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("REDIS_URL", "localhost:6379")
 	v.SetDefault("REDIS_PASSWORD", "")
 	v.SetDefault("REDIS_DB", 0)
+	v.SetDefault("SEPOLIA_RPC_URL", "https://ethereum-sepolia-rpc.publicnode.com")
+	v.SetDefault("SEPOLIA_CHAIN_ID", 11155111)
+	v.SetDefault("GAS_LIMIT", 300000)
+	v.SetDefault("GAS_PRICE_GWEI", 2)
+	v.SetDefault("AGENT_REGISTRY_ADDRESS", "0x97b07dDc405B0c28B17559aFFE63BdB3632d0ca3")
+	v.SetDefault("HACKATHON_VAULT_ADDRESS", "0x0E7CD8ef9743FEcf94f9103033a044caBD45fC90")
+	v.SetDefault("RISK_ROUTER_ADDRESS", "0xd6A6952545FF6E6E6681c2d15C59f9EB8F40FdBC")
+	v.SetDefault("REPUTATION_REGISTRY_ADDRESS", "0x423a9904e39537a9997fbaF0f220d79D7d545763")
+	v.SetDefault("VALIDATION_REGISTRY_ADDRESS", "0x92bF63E5C7Ac6980f237a7164Ab413BE226187F1")
 }
