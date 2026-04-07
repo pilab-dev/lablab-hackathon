@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"math/big"
-	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -22,6 +21,9 @@ type AgentInfo struct {
 }
 
 func (c *Client) IsRegistered(ctx context.Context, agentId *big.Int) (bool, error) {
+	if agentId == nil {
+		return false, fmt.Errorf("agentId cannot be nil")
+	}
 	logger := log.With().Str("module", "blockchain").Str("method", "IsRegistered").Logger()
 	logger.Debug().Str("agent_id", agentId.String()).Msg("Checking agent registration status")
 
@@ -67,6 +69,9 @@ func (c *Client) RegisterAgent(ctx context.Context, name, description string, ca
 }
 
 func (c *Client) GetAgent(ctx context.Context, agentId *big.Int) (*AgentInfo, error) {
+	if agentId == nil {
+		return nil, fmt.Errorf("agentId cannot be nil")
+	}
 	logger := log.With().Str("module", "blockchain").Str("method", "GetAgent").Logger()
 	logger.Debug().Str("agent_id", agentId.String()).Msg("Fetching agent info")
 

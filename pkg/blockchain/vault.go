@@ -10,6 +10,9 @@ import (
 )
 
 func (c *Client) HasClaimed(ctx context.Context, agentId *big.Int) (bool, error) {
+	if agentId == nil {
+		return false, fmt.Errorf("agentId cannot be nil")
+	}
 	logger := log.With().Str("module", "blockchain").Str("method", "HasClaimed").Logger()
 	logger.Debug().Str("agent_id", agentId.String()).Msg("Checking vault claim status")
 
@@ -23,6 +26,9 @@ func (c *Client) HasClaimed(ctx context.Context, agentId *big.Int) (bool, error)
 }
 
 func (c *Client) ClaimAllocation(ctx context.Context, agentId *big.Int) error {
+	if agentId == nil {
+		return fmt.Errorf("agentId cannot be nil")
+	}
 	logger := log.With().Str("module", "blockchain").Str("method", "ClaimAllocation").Logger()
 	logger.Info().Str("agent_id", agentId.String()).Msg("Claiming vault allocation")
 
@@ -47,6 +53,9 @@ func (c *Client) ClaimAllocation(ctx context.Context, agentId *big.Int) error {
 }
 
 func (c *Client) GetVaultBalance(ctx context.Context, agentId *big.Int) (*big.Int, error) {
+	if agentId == nil {
+		return nil, fmt.Errorf("agentId cannot be nil")
+	}
 	logger := log.With().Str("module", "blockchain").Str("method", "GetVaultBalance").Logger()
 	logger.Debug().Str("agent_id", agentId.String()).Msg("Fetching agent vault balance")
 
